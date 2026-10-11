@@ -1,5 +1,7 @@
 # Envoyr
 
+> *From intent to environment.*
+
 An AI-powered development environment orchestrator.
 
 ## Problem
