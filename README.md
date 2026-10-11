@@ -40,6 +40,52 @@ Natural Language Intent
 - **Host Agnostic & Lightweight:** Enables developers on low-resource machines or native Windows setups to spin up complex, Linux-dependent toolchains without mandatory Docker Desktop installs.
 - **Bounded Self-Healing:** Automated failure diagnosis with bounded retry limits and actionable escalation when interventions fail.
 
+## Component Breakdown
+
+Envoyr is composed of five decoupled core subsystems:
+
+- **CLI & Task Engine:** Orchestrates state machine transitions, maintains typed task contracts, and tracks execution history via local SQLite persistence.
+- **Documentation Research Engine:** Queries official upstream documentation, resolves OS compatibility matrices, and extracts prerequisite dependencies with source citations.
+- **Planner & Policy Gate:** Synthesizes dependency-ordered Directed Acyclic Graphs (DAGs) of discrete operations, enforcing human-in-the-loop review before any command executes.
+- **Controlled Execution Adapters:** Dispatches approved steps through isolated runners (native PowerShell, WSL, or remote Linux cloud micro-VMs) with strict execution timeouts, stdout/stderr capture, and allowlists.
+- **Verification & Healing Engine:** Runs post-installation smoke tests and health checks. If an error occurs, it analyzes logs to formulate bounded recovery plans.
+
+## Example Workflow
+
+```shell
+$ envoyr setup "Configure Midnight development environment on Windows"
+
+[1/5] Researching official Midnight documentation...
+      ✓ Retrieved documentation from midnight.network
+      ✓ Resolved prerequisite toolchain: Rust 1.80+, Compact compiler, Docker/remote worker
+      ✓ Verified Windows compatibility path: Remote Linux Worker recommended
+
+[2/5] Synthesized Execution Plan:
+      ┌── Step 1: Initialize remote Linux worker session
+      ├── Step 2: Install toolchain dependencies (build-essential, pkg-config)
+      ├── Step 3: Install Compact CLI v0.2.1
+      └── Step 4: Configure environment variables & verify PATH
+
+[?] Proceed with execution? [y/N/inspect]: y
+
+[3/5] Executing plan...
+      [✓] Step 1: Remote session established (latency: 32ms)
+      [✓] Step 2: Toolchain dependencies installed (38s)
+      [✓] Step 3: Compact CLI v0.2.1 installed (14s)
+      [✓] Step 4: Environment configured
+
+[4/5] Running verification smoke tests...
+      ✓ `compact --version` -> 0.2.1 (OK)
+      ✓ Midnight test contract compilation passed
+
+[5/5] Success! Environment ready. Session logged to neatlogs.
+```
+
+## Execution Adapters
+
+- **Local Host / WSL:** Executes directly on developer machines where native packages or WSL2 are supported and sufficient.
+- **Remote Linux Worker:** Spawns a lightweight, disposable remote Linux container or micro-VM over an encrypted connection—enabling seamless setups on low-spec Windows laptops without requiring local Docker Desktop.
+
 ## Implementation Plan
 
 - **Phase 0 — Repository and Development Foundation:** Establish repository structure, reproducible environment, documentation, and Entire tracking.
@@ -63,3 +109,8 @@ Natural Language Intent
 ## Initial Target
 
 A verified developer-toolchain setup workflow, starting with Midnight on Windows without requiring Docker Desktop locally.
+
+## Current Status
+
+- **Active Milestone:** Phase 0 — Repository and Development Foundation.
+- **Observability & Workflow:** Integrated with Entire for session checkpoints and neatlogs for agent execution tracing.
