@@ -12,6 +12,34 @@ Developers frequently encounter tools unavailable natively on their operating sy
 
 Envoyr accepts natural-language setup requests, researches official documentation, plans an appropriate environment, requests human approvals, executes operations safely, recovers from failures, and verifies the final environment.
 
+## Architecture & Lifecycle
+
+```
+Natural Language Intent
+        │
+        ▼
+[ Research & Profiling ] ──► Fetches official documentation, matrices, and prerequisites
+        │
+        ▼
+[ Dependency Planning ]  ──► Generates dependency-ordered execution DAG and safety rules
+        │
+        ▼
+[ Human Approval Gate ]  ──► Interactive inspection and explicit consent before execution
+        │
+        ▼
+[ Controlled Execution ] ──► Local or remote workers with sandboxing, allowlists, and timeouts
+        │
+        ▼
+[ Verify & Self-Heal ]   ──► Executes smoke tests; triggers bounded diagnostics and recovery
+```
+
+### Core Principles
+
+- **Safety-First Execution:** No destructive or unreviewed actions. Commands are mapped against strict policy allowlists with explicit human approval checkpoints.
+- **Evidence-Grounded Planning:** Toolchain requirements and installation steps are derived from authoritative, cited documentation rather than speculative agent behavior.
+- **Host Agnostic & Lightweight:** Enables developers on low-resource machines or native Windows setups to spin up complex, Linux-dependent toolchains without mandatory Docker Desktop installs.
+- **Bounded Self-Healing:** Automated failure diagnosis with bounded retry limits and actionable escalation when interventions fail.
+
 ## Implementation Plan
 
 - **Phase 0 — Repository and Development Foundation:** Establish repository structure, reproducible environment, documentation, and Entire tracking.
