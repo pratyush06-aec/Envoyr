@@ -59,6 +59,14 @@ def diagnose_failure(command: str, stderr: str, stdout: str) -> HealingDiagnosis
             can_auto_heal=True,
         )
 
+    if any(p in combined for p in ["error: could not compile", "syntax error", "compilation failed"]):
+        return HealingDiagnosis(
+            failure_type="COMPILATION_ERROR",
+            analysis="Contract or toolchain compilation failed during verification.",
+            suggested_fix="Inspect compiler error diagnostics, verify toolchain version compatibility, and review contract syntax.",
+            can_auto_heal=False,
+        )
+
     return HealingDiagnosis(
         failure_type="UNKNOWN_ERROR",
         analysis="Command exited with unexpected error output.",

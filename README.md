@@ -121,6 +121,9 @@ A verified developer-toolchain setup workflow, starting with Midnight on Windows
   - **Phase 5 — Verification & Bounded Self-Healing:** Post-installation smoke test runner, root-cause error diagnostics (`PATH_OR_BINARY_MISSING`, `PERMISSION_DENIED`, `NETWORK_TRANSIENT`), and automated retry recovery (`envoyr verify`).
   - **Phase 6 — Ecosystem Integrations:** Structured telemetry event streaming via `NeatlogsTracer` and compute unit economics / cost savings calculation via `EconomicsCalculator` (cfo.ai).
   - **Phase 7 — Remote Linux Micro-VM Execution:** Offloaded execution for complex Linux-dependent developer toolchains (e.g. Midnight on Windows without Docker Desktop) via configurable SSH and isolated micro-VM sandboxes.
-- **Test Suite Status:** 33 unit tests across 5 test suites (`test_tasks`, `test_research`, `test_planner`, `test_executor`, `test_verifier`, `test_integrations`), 100% passing.
-- **Observability & Workflow:** Integrated with Entire for session checkpoints and neatlogs for agent execution tracing.
+  - **Phase 8 — Midnight Toolchain Profile:** End-to-end orchestration for the Midnight Network toolchain on Windows, verifying Rustup, Compact compiler, contract compilation diagnostics, and remote execution.
+  - **Phase 9 — Additional Developer Toolchains:** Expanded evidence-grounded research and profile synthesis to Foundry (Ethereum EVM), Solana CLI, and CosmWasm smart contracts.
+  - **Phase 10 — Productization & Interactive Demo:** Streamlined CLI with end-to-end `envoyr demo` showcase, rich diagnostics, CFO.ai unit economics savings reports, and neatlogs telemetry traces.
+- **Test Suite Status:** 44 unit tests across 8 test suites (`test_tasks`, `test_research`, `test_planner`, `test_executor`, `test_verifier`, `test_integrations`, `test_midnight`, `test_toolchains`), 100% passing.
+- **Observability & Workflow:** Integrated with Entire for session checkpoints, neatlogs for agent execution tracing, and cfo.ai for unit economics modeling.
 

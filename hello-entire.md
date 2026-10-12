@@ -116,6 +116,15 @@ A verified developer-toolchain setup workflow, starting with Midnight on Windows
   - **Phase 0 — Repository and Development Foundation:** Repository setup, pyproject.toml, standard library architecture, and test suite.
   - **Phase 1 — CLI and Structured Task Model:** Typed task contracts, SQLite persistence (`tasks`, `steps`, `state_transitions`), state transition validation engine, and `envoyr` CLI (`setup`, `list`, `status`, `history`, `transition`).
   - **Phase 2 — Documentation Research:** Upstream doc research, cited sources, OS compatibility matrix, prerequisite derivation, and toolchain profiling.
-- **Active Milestone:** Phase 3 — Planning and Human-in-the-Loop.
-- **Observability & Workflow:** Integrated with Entire for session checkpoints and neatlogs for agent execution tracing.
+  - **Phase 3 — Planning and Human-in-the-Loop:** DAG topological ordering, safety blocked-pattern denylist, plan inspection, and approval gate (`plan`, `approve`, `reject`).
+  - **Phase 4 — Controlled Execution Engine:** Multi-adapter runner (`LocalAdapter`, `WSLAdapter`, `RemoteAdapter`) with per-step timeouts and status tracking (`envoyr run`).
+  - **Phase 5 — Verification and Self-Healing:** Post-installation smoke test runner, failure diagnostics (`PATH_OR_BINARY_MISSING`, `COMPILATION_ERROR`, `NETWORK_TRANSIENT`), and automated retry recovery (`envoyr verify`).
+  - **Phase 6 — Mandatory Integrations:** Integrated neatlogs for telemetry event streaming, Entire for coding workflow, and cfo.ai for unit economics modeling.
+  - **Phase 7 — Remote Linux Execution:** Offloaded remote execution via SSH and isolated micro-VM sandboxes for complex toolchains on Windows.
+  - **Phase 8 — Midnight Toolchain Profile:** End-to-end orchestration for Midnight on Windows (Rustup, Compact compiler, contract checks, remote execution).
+  - **Phase 9 — Additional Toolchains:** Expanded support to Foundry (Ethereum EVM), Solana CLI, and CosmWasm smart contracts.
+  - **Phase 10 — Productization and Demo:** Polished CLI experience with end-to-end `envoyr demo` showcase and detailed summaries.
+- **Test Suite Status:** 44 unit tests across 8 test suites, 100% passing.
+- **Observability & Workflow:** Integrated with Entire for session checkpoints, neatlogs for agent execution tracing, and cfo.ai for unit economics modeling.
+
 

@@ -63,6 +63,79 @@ KNOWN_PROFILES: dict[str, dict] = {
             "rustc --version",
             "cargo --version",
             "compact --version",
+            "compact --help",
+        ],
+    },
+    "foundry": {
+        "name": "Foundry Ethereum Toolchain",
+        "sources": [
+            "https://book.getfoundry.sh/getting-started/installation",
+        ],
+        "windows_adapter": "remote",
+        "linux_adapter": "local",
+        "compatibility_notes": "Foundry toolchain (forge, cast, anvil) is natively optimized for Linux. On Windows, Remote Linux Worker or WSL is recommended.",
+        "prerequisites": [
+            {"name": "curl", "description": "Command-line data transfer tool", "install_command": "apt-get install -y curl"},
+            {"name": "git", "description": "Distributed version control system", "install_command": "apt-get install -y git"},
+            {"name": "foundryup", "min_version": "1.0.0", "description": "Foundry toolchain installer", "install_command": "curl -L https://foundry.paradigm.xyz | bash"},
+        ],
+        "install_steps": [
+            {"order": 0, "title": "Initialize worker environment", "command": "uname -a && whoami", "adapter": "remote"},
+            {"order": 1, "title": "Install base dependencies", "command": "apt-get update && apt-get install -y curl git build-essential", "adapter": "remote"},
+            {"order": 2, "title": "Install Foundryup installer", "command": "curl -L https://foundry.paradigm.xyz | bash", "adapter": "remote"},
+            {"order": 3, "title": "Execute foundryup", "command": "export PATH=\"$HOME/.foundry/bin:$PATH\" && foundryup", "adapter": "remote"},
+            {"order": 4, "title": "Configure PATH in profile", "command": "export PATH=\"$HOME/.foundry/bin:$PATH\"", "adapter": "remote"},
+        ],
+        "smoke_tests": [
+            "forge --version",
+            "cast --version",
+            "anvil --version",
+        ],
+    },
+    "solana": {
+        "name": "Solana Toolchain",
+        "sources": [
+            "https://docs.solanalabs.com/cli/install",
+        ],
+        "windows_adapter": "remote",
+        "linux_adapter": "local",
+        "compatibility_notes": "Solana CLI and cargo-build-sbf require Linux toolchains for Berkeley Packet Filter compilation.",
+        "prerequisites": [
+            {"name": "build-essential", "description": "Base C/C++ compilation toolchain", "install_command": "apt-get install -y build-essential pkg-config libudev-dev"},
+            {"name": "curl", "description": "Command-line data transfer tool", "install_command": "apt-get install -y curl"},
+            {"name": "solana-cli", "min_version": "1.18.0", "description": "Solana command-line tools", "install_command": "sh -c \"$(curl -sSfL https://release.anza.xyz/stable/install)\""},
+        ],
+        "install_steps": [
+            {"order": 0, "title": "Initialize worker environment", "command": "uname -a && whoami", "adapter": "remote"},
+            {"order": 1, "title": "Install prerequisite build packages", "command": "apt-get update && apt-get install -y build-essential pkg-config libudev-dev curl", "adapter": "remote"},
+            {"order": 2, "title": "Install Solana CLI suite", "command": "sh -c \"$(curl -sSfL https://release.anza.xyz/stable/install)\"", "adapter": "remote"},
+            {"order": 3, "title": "Configure PATH for Solana binaries", "command": "export PATH=\"$HOME/.local/share/solana/install/active_release/bin:$PATH\"", "adapter": "remote"},
+        ],
+        "smoke_tests": [
+            "solana --version",
+        ],
+    },
+    "cosmwasm": {
+        "name": "CosmWasm Toolchain",
+        "sources": [
+            "https://docs.cosmwasm.com/docs/getting-started/installation",
+        ],
+        "windows_adapter": "remote",
+        "linux_adapter": "local",
+        "compatibility_notes": "CosmWasm smart contract compilation relies on wasm32-unknown-unknown target and cargo-generate.",
+        "prerequisites": [
+            {"name": "rust", "min_version": "1.75.0", "description": "Rust language toolchain with wasm32 target", "install_command": "rustup target add wasm32-unknown-unknown"},
+            {"name": "cargo-generate", "min_version": "0.18.0", "description": "Cargo project template generator", "install_command": "cargo install cargo-generate"},
+        ],
+        "install_steps": [
+            {"order": 0, "title": "Initialize worker environment", "command": "uname -a && whoami", "adapter": "remote"},
+            {"order": 1, "title": "Install build tools and curl", "command": "apt-get update && apt-get install -y build-essential curl pkg-config libssl-dev", "adapter": "remote"},
+            {"order": 2, "title": "Install Rust and wasm32 target", "command": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && export PATH=\"$HOME/.cargo/bin:$PATH\" && rustup target add wasm32-unknown-unknown", "adapter": "remote"},
+            {"order": 3, "title": "Install cargo-generate", "command": "cargo install cargo-generate --features vendored-openssl", "adapter": "remote"},
+        ],
+        "smoke_tests": [
+            "rustc --version",
+            "cargo --version",
         ],
     },
     "rust": {
@@ -102,7 +175,16 @@ def research_toolchain(intent: str, target_os: str = "windows") -> ToolchainProf
     """Analyze natural-language setup intent and generate evidence-grounded profile."""
     intent_lower = intent.lower()
 
-    key = "midnight" if "midnight" in intent_lower or "compact" in intent_lower else "rust"
+    if "midnight" in intent_lower or "compact" in intent_lower:
+        key = "midnight"
+    elif "foundry" in intent_lower or "forge" in intent_lower or "anvil" in intent_lower:
+        key = "foundry"
+    elif "solana" in intent_lower or "agave" in intent_lower:
+        key = "solana"
+    elif "cosmwasm" in intent_lower or "wasmd" in intent_lower:
+        key = "cosmwasm"
+    else:
+        key = "rust"
     raw = KNOWN_PROFILES.get(key, KNOWN_PROFILES["rust"])
 
     recommended_adapter = (
