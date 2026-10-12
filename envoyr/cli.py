@@ -25,6 +25,12 @@ def print_non_technical_diagnostic(diagnosis, failed_step: Step | None = None) -
     print(f"  • Guidance:      {diagnosis.suggested_fix}", file=sys.stderr)
     if diagnosis.remediation_command:
         print(f"  • Auto-Remedy:   {diagnosis.remediation_command}", file=sys.stderr)
+    if getattr(diagnosis, "mentor_guidance", None):
+        print("\n" + "-" * 70, file=sys.stderr)
+        print(" [Envoyr Mentor Guidance — Action Required on Local Device]", file=sys.stderr)
+        for idx, g_step in enumerate(diagnosis.mentor_guidance, start=1):
+            print(f"   {idx}. {g_step}", file=sys.stderr)
+        print("-" * 70, file=sys.stderr)
     print("=" * 70, file=sys.stderr)
 
 

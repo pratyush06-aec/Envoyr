@@ -181,6 +181,28 @@ TOOL_DATABASE: dict[str, dict] = {
         ],
         "smoke": ["rustc --version", "cargo --version"],
     },
+    "kotlin": {
+        "name": "Kotlin Compiler & Toolchain",
+        "sources": [
+            "https://kotlinlang.org/docs/command-line.html",
+            "https://github.com/JetBrains/kotlin",
+        ],
+        "windows_adapter": "local",
+        "linux_adapter": "local",
+        "notes": "Kotlin compiler runs on JVM (Java 8+). On Windows, it can be installed via Chocolatey (package: kotlinc) or standalone compiler archive.",
+        "prereqs": [
+            {"name": "java", "min_version": "17", "description": "Java Development Kit (JDK)"},
+        ],
+        "windows_steps": [
+            {"order": 0, "title": "Check or install Chocolatey package manager", "command": "choco --version || powershell -NoProfile -ExecutionPolicy Bypass -Command \"[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))\""},
+            {"order": 1, "title": "Install Temurin JDK (Java 17) via Chocolatey", "command": "choco install temurin -y --version=17.0.9"},
+            {"order": 2, "title": "Install Kotlin compiler via Chocolatey", "command": "choco install kotlinc -y"},
+        ],
+        "linux_steps": [
+            {"order": 0, "title": "Install default JDK and Kotlin compiler", "command": "apt-get update -y && apt-get install -y default-jdk kotlin"},
+        ],
+        "smoke": ["kotlinc -version"],
+    },
 }
 
 
@@ -205,6 +227,8 @@ def synthesize_heuristic_profile(intent: str, target_os: str = "windows") -> Too
             matched_key = "solana"
         elif any(w in intent_lower for w in ["wasmd"]):
             matched_key = "cosmwasm"
+        elif any(w in intent_lower for w in ["kotlinc"]):
+            matched_key = "kotlin"
 
     if matched_key and matched_key in TOOL_DATABASE:
         data = TOOL_DATABASE[matched_key]

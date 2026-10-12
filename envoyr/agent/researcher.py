@@ -27,6 +27,10 @@ Guidelines:
    - If recommended_adapter is 'wsl', install_steps commands MUST be native Linux/bash commands (e.g. 'sudo apt-get update -y', 'curl -fsSL https://... | bash').
    - NEVER prefix commands with 'wsl', 'wsl.exe', or 'wsl -d <distro>' because the adapter runs inside WSL directly.
    - Always include non-interactive flags (e.g. -y for apt-get).
+5. Windows Package Managers & Shell:
+   - On Windows Chocolatey, use correct official package identifiers (e.g. Kotlin compiler is 'kotlinc', not 'kotlin').
+   - For package manager installation steps, make them idempotent (e.g. 'choco --version || <install script>').
+   - Any PowerShell one-liners must be executable via 'powershell -NoProfile -ExecutionPolicy Bypass -Command "..."'.
 
 You MUST respond strictly with valid JSON without additional conversational text.
 Schema:

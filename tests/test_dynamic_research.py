@@ -225,6 +225,42 @@ class TestDynamicResearchAndSelfHealing(unittest.TestCase):
         self.assertIn("Environment Configuration (WSL)", output)
         self.assertIn("Guidance:", output)
 
+    def test_elevation_diagnosis_and_mentor_guidance(self):
+        diag = diagnose_failure(
+            "choco install temurin -y",
+            stderr="Chocolatey detected you are not running from an elevated command shell (cmd/powershell).",
+            stdout="",
+        )
+        self.assertEqual(diag.failure_type, "ELEVATION_REQUIRED")
+        self.assertEqual(diag.display_category, "System Privilege / Administrator Rights")
+        self.assertIn("Administrator privileges", diag.display_summary)
+        self.assertIsNotNone(diag.mentor_guidance)
+        self.assertTrue(len(diag.mentor_guidance) >= 2)
+
+        import io
+        from contextlib import redirect_stderr
+        from envoyr.cli import print_non_technical_diagnostic
+
+        f = io.StringIO()
+        with redirect_stderr(f):
+            print_non_technical_diagnostic(diag)
+        output = f.getvalue()
+        self.assertIn("[Envoyr Mentor Guidance — Action Required on Local Device]", output)
+        self.assertIn("Terminal (Admin)", output)
+
+    def test_powershell_syntax_and_choco_skip(self):
+        from envoyr.executor import LocalAdapter, is_powershell_syntax
+
+        self.assertTrue(is_powershell_syntax("Set-ExecutionPolicy Bypass -Scope Process"))
+        self.assertTrue(is_powershell_syntax("powershell -c \"echo hello\""))
+        self.assertFalse(is_powershell_syntax("python --version"))
+
+        adapter = LocalAdapter()
+        # Test choco idempotent check
+        res = adapter.execute("iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))")
+        self.assertEqual(res.exit_code, 0)
+        self.assertIn("Chocolatey is already installed", res.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

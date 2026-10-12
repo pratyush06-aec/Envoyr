@@ -36,19 +36,71 @@ class BaseAdapter(ABC):
         pass
 
 
+def is_powershell_syntax(command: str) -> bool:
+    """Check if command syntax requires PowerShell execution instead of cmd.exe."""
+    cmd = command.strip().lower()
+    if cmd.startswith("powershell") or cmd.startswith("pwsh"):
+        return True
+    ps_tokens = [
+        "set-executionpolicy",
+        "[system.",
+        "downloadstring",
+        "invoke-webrequest",
+        "invoke-restmethod",
+        "iex (",
+        "iex(",
+        "$env:",
+        "new-object",
+        "get-command",
+        "test-path",
+    ]
+    return any(token in cmd for token in ps_tokens)
+
+
 class LocalAdapter(BaseAdapter):
     """Executes commands directly on the host system shell."""
 
     def execute(self, command: str, timeout: int = 300) -> ExecutionResult:
         start_time = time.perf_counter()
+        # Fast idempotent path: If Chocolatey install script is invoked but choco is already installed
+        if "chocolatey.org/install.ps1" in command and shutil.which("choco"):
+            try:
+                check = subprocess.run(
+                    ["choco", "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if check.returncode == 0:
+                    ver = check.stdout.strip()
+                    elapsed = time.perf_counter() - start_time
+                    return ExecutionResult(
+                        exit_code=0,
+                        stdout=f"Chocolatey is already installed ({ver}). Skipping redundant reinstallation.",
+                        stderr="",
+                        duration_ms=int(elapsed * 1000),
+                        timed_out=False,
+                    )
+            except Exception:
+                pass
+
         try:
-            proc = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            # On Windows, wrap PowerShell-specific commands or cmdlets to run via powershell.exe
+            if os.name == "nt" and is_powershell_syntax(command) and not command.strip().lower().startswith("powershell"):
+                proc = subprocess.run(
+                    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+            else:
+                proc = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
             elapsed = time.perf_counter() - start_time
             return ExecutionResult(
                 exit_code=proc.returncode,
@@ -264,7 +316,7 @@ class ExecutionEngine:
         storage: Storage,
         adapters: Mapping[str, BaseAdapter] | None = None,
         researcher: Any | None = None,
-        max_healing_retries: int = 1,
+        max_healing_retries: int = 3,
         on_diagnostic: Callable[[Any, Step], None] | None = None,
     ):
         self.storage = storage
@@ -309,11 +361,17 @@ class ExecutionEngine:
             else:
                 diagnosis = None
                 healed = False
-                if self.researcher is not None and self.max_healing_retries > 0:
+                max_retries = max(1, self.max_healing_retries)
+                current_cmd = step.command
+                accumulated_duration = res.duration_ms
+
+                for retry_attempt in range(max_retries):
+                    if self.researcher is None:
+                        break
                     try:
                         from envoyr.verifier import diagnose_failure
                         diagnosis = diagnose_failure(
-                            step.command,
+                            current_cmd,
                             res.stderr,
                             res.stdout,
                             researcher=self.researcher,
@@ -321,23 +379,50 @@ class ExecutionEngine:
                         if self.on_diagnostic and diagnosis:
                             self.on_diagnostic(diagnosis, step)
 
-                        if diagnosis and diagnosis.can_auto_heal:
-                            if diagnosis.remediation_command:
-                                adapter.execute(diagnosis.remediation_command, timeout=60)
-                            retry_res = adapter.execute(step.command, timeout=timeout_per_step)
-                            if retry_res.exit_code == 0:
-                                healed = True
-                                self.storage.update_step(
-                                    step_id=step.id,
-                                    status=StepStatus.SUCCESS,
-                                    exit_code=0,
-                                    stdout=retry_res.stdout,
-                                    stderr=retry_res.stderr,
-                                    duration_ms=res.duration_ms + retry_res.duration_ms,
-                                )
-                                continue
+                        if diagnosis and diagnosis.can_auto_heal and diagnosis.remediation_command:
+                            remedy_cmd = diagnosis.remediation_command
+                            remedy_res = adapter.execute(remedy_cmd, timeout=timeout_per_step)
+                            accumulated_duration += remedy_res.duration_ms
+
+                            if remedy_res.exit_code == 0:
+                                # Remediation succeeded! Test if retrying current_cmd succeeds, or if remedy_cmd replaced it.
+                                retry_res = adapter.execute(current_cmd, timeout=timeout_per_step)
+                                accumulated_duration += retry_res.duration_ms
+                                if retry_res.exit_code == 0:
+                                    healed = True
+                                    self.storage.update_step(
+                                        step_id=step.id,
+                                        status=StepStatus.SUCCESS,
+                                        exit_code=0,
+                                        stdout=retry_res.stdout,
+                                        stderr=retry_res.stderr,
+                                        duration_ms=accumulated_duration,
+                                    )
+                                    break
+                                else:
+                                    # The remediation command was itself the functional replacement for the step
+                                    self.storage.update_step_command(step.id, remedy_cmd)
+                                    step.command = remedy_cmd
+                                    healed = True
+                                    self.storage.update_step(
+                                        step_id=step.id,
+                                        status=StepStatus.SUCCESS,
+                                        exit_code=0,
+                                        stdout=remedy_res.stdout,
+                                        stderr=remedy_res.stderr,
+                                        duration_ms=accumulated_duration,
+                                    )
+                                    break
+                            else:
+                                res = remedy_res
+                                current_cmd = remedy_cmd
+                        else:
+                            break
                     except Exception:
-                        pass
+                        break
+
+                if healed:
+                    continue
 
                 self.storage.update_step(
                     step_id=step.id,
@@ -345,7 +430,7 @@ class ExecutionEngine:
                     exit_code=res.exit_code,
                     stdout=res.stdout,
                     stderr=res.stderr,
-                    duration_ms=res.duration_ms,
+                    duration_ms=accumulated_duration,
                 )
                 err_msg = res.stderr.strip() or f"Command failed with exit code {res.exit_code}"
                 if diagnosis and getattr(diagnosis, "display_summary", None):

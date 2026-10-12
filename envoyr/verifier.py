@@ -31,6 +31,7 @@ class HealingDiagnosis:
     can_auto_heal: bool
     remediation_command: str | None = None
     non_technical_summary: str | None = None
+    mentor_guidance: list[str] | None = None
 
     @property
     def display_category(self) -> str:
@@ -38,6 +39,8 @@ class HealingDiagnosis:
         categories = {
             "PATH_OR_BINARY_MISSING": "Environment Setup / Program Path",
             "PERMISSION_DENIED": "Permissions / System Access",
+            "ELEVATION_REQUIRED": "System Privilege / Administrator Rights",
+            "CONFIG_ERROR": "Terminal Shell Configuration",
             "NETWORK_TRANSIENT": "Network / Internet Connection",
             "COMPILATION_ERROR": "Build / Package Compilation",
             "WSL_COMMAND_IN_LINUX": "Environment Configuration (WSL)",
@@ -50,6 +53,10 @@ class HealingDiagnosis:
         """Returns a plain-English, non-technical explanation for end users."""
         if self.non_technical_summary:
             return self.non_technical_summary
+        if self.failure_type == "ELEVATION_REQUIRED":
+            return "This installation step requires Windows Administrator privileges to register software on your system."
+        if self.failure_type == "CONFIG_ERROR":
+            return "A shell syntax or terminal mismatch occurred while running commands in this environment."
         if self.failure_type == "PATH_OR_BINARY_MISSING":
             return "The installed program could not be located in your current terminal session because the environment path needs to be refreshed."
         if self.failure_type == "PERMISSION_DENIED":
@@ -83,6 +90,52 @@ def diagnose_failure(
             non_technical_summary="A Windows-specific command was executed inside the Linux environment. Envoyr can automatically adapt and run this natively.",
         )
 
+    # Windows Administrator / Elevation detection
+    if any(
+        p in combined
+        for p in [
+            "not running from an elevated",
+            "require admin rights",
+            "run as administrator",
+            "elevated permissions are required",
+            "requires elevation",
+            "requested operation requires elevation",
+        ]
+    ):
+        return HealingDiagnosis(
+            failure_type="ELEVATION_REQUIRED",
+            analysis="The command attempted to install or modify system software without Windows Administrator privileges.",
+            suggested_fix="Run PowerShell or Command Prompt as Administrator, or execute via elevated terminal.",
+            can_auto_heal=False,
+            non_technical_summary="This step requires Windows Administrator privileges to install system packages.",
+            mentor_guidance=[
+                "Press 'Win + X' on your keyboard and select 'Terminal (Admin)' (or search for 'PowerShell', right-click and choose 'Run as Administrator').",
+                f"Execute the required installation command directly in the elevated terminal:\n      >>> {command}",
+                "Once completed in your elevated terminal, return here and run verification smoke tests.",
+            ],
+        )
+
+    # Terminal syntax / PowerShell mismatch detection in cmd.exe
+    if (
+        any(
+            p in combined
+            for p in [
+                "'set-executionpolicy' is not recognized",
+                "the term 'set-executionpolicy' is not recognized",
+                "'iex' is not recognized",
+            ]
+        )
+        or ("downloadstring" in combined and "not recognized" in combined)
+    ):
+        return HealingDiagnosis(
+            failure_type="CONFIG_ERROR",
+            analysis="PowerShell syntax was executed inside standard cmd.exe terminal shell.",
+            suggested_fix="Wrap command with powershell -NoProfile -ExecutionPolicy Bypass -Command '...'",
+            can_auto_heal=True,
+            remediation_command=f'powershell -NoProfile -ExecutionPolicy Bypass -Command "{command}"',
+            non_technical_summary="A PowerShell script was executed in a standard Command Prompt session. Envoyr will automatically re-run this inside a PowerShell session.",
+        )
+
     # Dynamic AI diagnosis if researcher agent is available
     if researcher and hasattr(researcher, "diagnose_failure"):
         try:
@@ -96,7 +149,7 @@ def diagnose_failure(
         return HealingDiagnosis(
             failure_type="PATH_OR_BINARY_MISSING",
             analysis="The required binary is missing from PATH or not yet exported to the current shell session.",
-            suggested_fix="Refresh environment variables, add ~/.cargo/bin or %USERPROFILE%\\.cargo\\bin to PATH, or restart terminal.",
+            suggested_fix="Refresh environment variables, add to PATH, or restart terminal.",
             can_auto_heal=False,
             non_technical_summary="The required binary could not be found in the current terminal session. The system path may need to be updated.",
         )
@@ -108,6 +161,11 @@ def diagnose_failure(
             suggested_fix="Rerun using administrator/root privileges or check filesystem write permissions.",
             can_auto_heal=False,
             non_technical_summary="The installer needs administrator/root permissions to modify files in this directory.",
+            mentor_guidance=[
+                "Open your native terminal with Administrator (Windows) or root (Linux) privileges.",
+                f"Execute the required command:\n      >>> {command}",
+                "Return to Envoyr once completed to resume or verify.",
+            ],
         )
 
     if any(p in combined for p in ["connection refused", "network unreachable", "timeout", "timed out", "could not resolve host"]):
