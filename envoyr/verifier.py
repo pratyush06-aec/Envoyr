@@ -30,6 +30,37 @@ class HealingDiagnosis:
     suggested_fix: str
     can_auto_heal: bool
     remediation_command: str | None = None
+    non_technical_summary: str | None = None
+
+    @property
+    def display_category(self) -> str:
+        """Returns a non-technical, human-friendly category label."""
+        categories = {
+            "PATH_OR_BINARY_MISSING": "Environment Setup / Program Path",
+            "PERMISSION_DENIED": "Permissions / System Access",
+            "NETWORK_TRANSIENT": "Network / Internet Connection",
+            "COMPILATION_ERROR": "Build / Package Compilation",
+            "WSL_COMMAND_IN_LINUX": "Environment Configuration (WSL)",
+            "UNKNOWN_ERROR": "Installation Interruption",
+        }
+        return categories.get(self.failure_type, self.failure_type.replace("_", " ").title())
+
+    @property
+    def display_summary(self) -> str:
+        """Returns a plain-English, non-technical explanation for end users."""
+        if self.non_technical_summary:
+            return self.non_technical_summary
+        if self.failure_type == "PATH_OR_BINARY_MISSING":
+            return "The installed program could not be located in your current terminal session because the environment path needs to be refreshed."
+        if self.failure_type == "PERMISSION_DENIED":
+            return "The installer required elevated administrative permissions to write files to the destination directory."
+        if self.failure_type == "NETWORK_TRANSIENT":
+            return "A temporary network glitch or timeout occurred while downloading packages from the remote server."
+        if self.failure_type == "COMPILATION_ERROR":
+            return "The package build process stopped due to missing development dependencies or compiler version differences."
+        if self.failure_type == "WSL_COMMAND_IN_LINUX":
+            return "A command intended to launch Linux was run from inside Linux where the environment was already active."
+        return self.analysis
 
 
 def diagnose_failure(
@@ -41,36 +72,15 @@ def diagnose_failure(
     """Analyze error output to identify root causes and remediation actions."""
     combined = (stderr + " " + stdout).lower()
 
-    if any(p in combined for p in ["not recognized", "command not found", "no such file or directory"]):
+    # Redundant WSL wrapper detection
+    if "wsl: command not found" in combined or (command.strip().startswith("wsl") and "command not found" in combined):
         return HealingDiagnosis(
-            failure_type="PATH_OR_BINARY_MISSING",
-            analysis="The required binary is missing from PATH or not yet exported to the current shell session.",
-            suggested_fix="Refresh environment variables, add ~/.cargo/bin or %USERPROFILE%\\.cargo\\bin to PATH, or restart terminal.",
-            can_auto_heal=False,
-        )
-
-    if any(p in combined for p in ["permission denied", "access is denied", "operation not permitted"]):
-        return HealingDiagnosis(
-            failure_type="PERMISSION_DENIED",
-            analysis="Operation requires elevated privileges or elevated file system access.",
-            suggested_fix="Rerun using administrator/root privileges or check filesystem write permissions.",
-            can_auto_heal=False,
-        )
-
-    if any(p in combined for p in ["connection refused", "network unreachable", "timeout", "timed out", "could not resolve host"]):
-        return HealingDiagnosis(
-            failure_type="NETWORK_TRANSIENT",
-            analysis="Network connection failed or timed out reaching remote upstream.",
-            suggested_fix="Verify internet connectivity and proxy/firewall settings, then retry.",
+            failure_type="WSL_COMMAND_IN_LINUX",
+            analysis="A Windows WSL launcher command was invoked inside the Linux subsystem where the environment is already active.",
+            suggested_fix="Execute commands natively within Linux without prefixing 'wsl'.",
             can_auto_heal=True,
-        )
-
-    if any(p in combined for p in ["error: could not compile", "syntax error", "compilation failed"]):
-        return HealingDiagnosis(
-            failure_type="COMPILATION_ERROR",
-            analysis="Contract or toolchain compilation failed during verification.",
-            suggested_fix="Inspect compiler error diagnostics, verify toolchain version compatibility, and review contract syntax.",
-            can_auto_heal=False,
+            remediation_command="uname -a && whoami",
+            non_technical_summary="A Windows-specific command was executed inside the Linux environment. Envoyr can automatically adapt and run this natively.",
         )
 
     # Dynamic AI diagnosis if researcher agent is available
@@ -82,11 +92,48 @@ def diagnose_failure(
         except Exception:
             pass
 
+    if any(p in combined for p in ["not recognized", "command not found", "no such file or directory"]):
+        return HealingDiagnosis(
+            failure_type="PATH_OR_BINARY_MISSING",
+            analysis="The required binary is missing from PATH or not yet exported to the current shell session.",
+            suggested_fix="Refresh environment variables, add ~/.cargo/bin or %USERPROFILE%\\.cargo\\bin to PATH, or restart terminal.",
+            can_auto_heal=False,
+            non_technical_summary="The required binary could not be found in the current terminal session. The system path may need to be updated.",
+        )
+
+    if any(p in combined for p in ["permission denied", "access is denied", "operation not permitted"]):
+        return HealingDiagnosis(
+            failure_type="PERMISSION_DENIED",
+            analysis="Operation requires elevated privileges or elevated file system access.",
+            suggested_fix="Rerun using administrator/root privileges or check filesystem write permissions.",
+            can_auto_heal=False,
+            non_technical_summary="The installer needs administrator/root permissions to modify files in this directory.",
+        )
+
+    if any(p in combined for p in ["connection refused", "network unreachable", "timeout", "timed out", "could not resolve host"]):
+        return HealingDiagnosis(
+            failure_type="NETWORK_TRANSIENT",
+            analysis="Network connection failed or timed out reaching remote upstream.",
+            suggested_fix="Verify internet connectivity and proxy/firewall settings, then retry.",
+            can_auto_heal=True,
+            non_technical_summary="A temporary network connection issue occurred while downloading files from the server.",
+        )
+
+    if any(p in combined for p in ["error: could not compile", "syntax error", "compilation failed"]):
+        return HealingDiagnosis(
+            failure_type="COMPILATION_ERROR",
+            analysis="Contract or toolchain compilation failed during verification.",
+            suggested_fix="Inspect compiler error diagnostics, verify toolchain version compatibility, and review contract syntax.",
+            can_auto_heal=False,
+            non_technical_summary="Building the component failed due to compiler errors or missing dependencies.",
+        )
+
     return HealingDiagnosis(
         failure_type="UNKNOWN_ERROR",
         analysis="Command exited with unexpected error output.",
         suggested_fix="Inspect step stderr logs and run manual inspection in the targeted environment.",
         can_auto_heal=False,
+        non_technical_summary="An unexpected error occurred during execution.",
     )
 
 

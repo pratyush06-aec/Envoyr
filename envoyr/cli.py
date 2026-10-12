@@ -8,12 +8,24 @@ from pathlib import Path
 from envoyr import __version__
 from envoyr.executor import ExecutionEngine
 from envoyr.integrations import EconomicsCalculator, NeatlogsTracer
-from envoyr.models import Step, TaskState
+from envoyr.models import Step, StepStatus, TaskState
 from envoyr.planner import format_plan_inspection, validate_plan_safety
 from envoyr.research import research_toolchain
 from envoyr.storage import DEFAULT_DB_PATH, Storage
-from envoyr.verifier import Verifier
+from envoyr.verifier import Verifier, diagnose_failure
 from envoyr.agent import AgentResearcher
+
+
+def print_non_technical_diagnostic(diagnosis, failed_step: Step | None = None) -> None:
+    """Print clean, jargon-free non-technical diagnostics to the CLI user."""
+    print("\n" + "=" * 70, file=sys.stderr)
+    print(" [Envoyr AI Diagnostic Report]", file=sys.stderr)
+    print(f"  • Issue:         {diagnosis.display_category}", file=sys.stderr)
+    print(f"  • What Happened: {diagnosis.display_summary}", file=sys.stderr)
+    print(f"  • Guidance:      {diagnosis.suggested_fix}", file=sys.stderr)
+    if diagnosis.remediation_command:
+        print(f"  • Auto-Remedy:   {diagnosis.remediation_command}", file=sys.stderr)
+    print("=" * 70, file=sys.stderr)
 
 
 def _format_task_summary(task) -> str:
@@ -69,24 +81,45 @@ def _run_and_verify_pipeline(
         print(f"Error: Task '{task_id}' not found.", file=sys.stderr)
         return 1
 
+    if researcher is None:
+        researcher = AgentResearcher(storage=storage)
+
     steps = task.steps or []
     tracer = NeatlogsTracer()
     tracer.record_event("task_execution_started", task.id, {"steps": len(steps), "adapter": task.adapter})
 
     print(f"\n[3/5] Executing {len(steps)} step(s) via {task.adapter.upper()} adapter:")
-    engine = ExecutionEngine(storage)
+
+    def on_step_diagnostic(diag, step):
+        print(f"\n      + [AI Self-Debugger] Diagnosed issue on '{step.title}': {diag.display_category}")
+        if diag.can_auto_heal and diag.remediation_command:
+            print(f"      + [AI Self-Healing] Attempting auto-remediation: {diag.remediation_command}")
+
+    engine = ExecutionEngine(
+        storage,
+        researcher=researcher,
+        on_diagnostic=on_step_diagnostic,
+    )
     updated_task = engine.run_task(task.id, timeout_per_step=timeout)
     tracer.record_event("task_execution_finished", task.id, {"state": updated_task.state.value})
 
     if updated_task.state == TaskState.FAILED:
-        print(f"\n[!] Execution FAILED: {updated_task.error_message}", file=sys.stderr)
+        failed_step = next((s for s in updated_task.steps if s.status == StepStatus.FAILED), None)
+        if failed_step:
+            diagnosis = diagnose_failure(
+                failed_step.command,
+                failed_step.stderr,
+                failed_step.stdout,
+                researcher=researcher,
+            )
+            print_non_technical_diagnostic(diagnosis, failed_step)
+        else:
+            print(f"\n[!] Execution paused: {updated_task.error_message}", file=sys.stderr)
         return 1
     print(f"+ Task {task.id} execution completed. State: {updated_task.state.value}")
 
     if not skip_verify:
         print(f"\n[4/5] Running verification smoke tests...")
-        if researcher is None:
-            researcher = AgentResearcher(storage=storage)
         verifier = Verifier(storage, researcher=researcher)
         passed, results, diagnosis = verifier.verify_task(task.id)
         for r in results:
@@ -103,13 +136,9 @@ def _run_and_verify_pipeline(
             print("=" * 70)
             return 0
         else:
-            print(f"\n[!] Verification FAILED for Task {task.id}.", file=sys.stderr)
+            print(f"\n[!] Verification tests did not pass for Task {task.id}.", file=sys.stderr)
             if diagnosis:
-                print(f"    Root Cause:    {diagnosis.failure_type}", file=sys.stderr)
-                print(f"    Analysis:      {diagnosis.analysis}", file=sys.stderr)
-                print(f"    Suggested Fix: {diagnosis.suggested_fix}", file=sys.stderr)
-                if diagnosis.remediation_command:
-                    print(f"    Auto-heal Cmd: {diagnosis.remediation_command}", file=sys.stderr)
+                print_non_technical_diagnostic(diagnosis)
             return 1
 
     econ = EconomicsCalculator.calculate_cost(updated_task)
@@ -320,13 +349,9 @@ def cmd_verify(args) -> int:
         print(f"\n[5/5] Verification SUCCESS! Task {task.id} is COMPLETED.")
         return 0
     else:
-        print(f"\n[!] Verification FAILED for Task {task.id}.", file=sys.stderr)
+        print(f"\n[!] Verification tests did not pass for Task {task.id}.", file=sys.stderr)
         if diagnosis:
-            print(f"    Root Cause:    {diagnosis.failure_type}", file=sys.stderr)
-            print(f"    Analysis:      {diagnosis.analysis}", file=sys.stderr)
-            print(f"    Suggested Fix: {diagnosis.suggested_fix}", file=sys.stderr)
-            if diagnosis.remediation_command:
-                print(f"    Auto-heal Cmd: {diagnosis.remediation_command}", file=sys.stderr)
+            print_non_technical_diagnostic(diagnosis)
         return 1
 
 

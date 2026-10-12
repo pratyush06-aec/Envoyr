@@ -5,12 +5,13 @@ strict timeouts, step-level output logging, and fail-fast task status updates.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Any, Callable, Mapping
 
 from envoyr.models import Step, StepStatus, Task, TaskState
 from envoyr.storage import Storage
@@ -78,6 +79,29 @@ class LocalAdapter(BaseAdapter):
             )
 
 
+def normalize_wsl_command(command: str) -> str:
+    """Normalize commands executed via WSLAdapter so they run natively inside Linux bash."""
+    cmd = command.strip()
+    # Case 1: Pure WSL launch or distribution switch command
+    # e.g., "wsl", "wsl.exe", "wsl -d Ubuntu", "wsl ~", "wsl.exe --distribution Ubuntu"
+    if re.match(
+        r"^wsl(?:\.exe)?(?:\s+(?:-d|--distribution|-u|--user|-s|--set-default)\s+\S+|\s+~)*\s*$",
+        cmd,
+        re.IGNORECASE,
+    ):
+        return "uname -a && whoami"
+
+    # Case 2: Redundant WSL wrapper around an actual command
+    # e.g., "wsl sudo apt update", "wsl.exe -d Ubuntu curl ...", "wsl -e bash -c '...'"
+    pattern = r"^wsl(?:\.exe)?(?:\s+(?:-d|--distribution|-u|--user)\s+\S+)*(?:\s+-e)?(?:\s+bash\s+-c)?\s+"
+    stripped = re.sub(pattern, "", cmd, flags=re.IGNORECASE).strip()
+    if (stripped.startswith('"') and stripped.endswith('"')) or (
+        stripped.startswith("'") and stripped.endswith("'")
+    ):
+        stripped = stripped[1:-1].strip()
+    return stripped or "uname -a && whoami"
+
+
 class WSLAdapter(BaseAdapter):
     """Executes commands inside Windows Subsystem for Linux (WSL)."""
 
@@ -93,10 +117,11 @@ class WSLAdapter(BaseAdapter):
                 duration_ms=0,
             )
 
+        clean_command = normalize_wsl_command(command)
         start_time = time.perf_counter()
         try:
             proc = subprocess.run(
-                ["wsl", "-e", "bash", "-c", command],
+                ["wsl", "-e", "bash", "-c", clean_command],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -232,14 +257,24 @@ def get_adapter(name: str, adapters: Mapping[str, BaseAdapter] | None = None) ->
 
 
 class ExecutionEngine:
-    """Orchestrates step-by-step task execution with status persistence."""
+    """Orchestrates step-by-step task execution with status persistence and self-healing."""
 
-    def __init__(self, storage: Storage, adapters: Mapping[str, BaseAdapter] | None = None):
+    def __init__(
+        self,
+        storage: Storage,
+        adapters: Mapping[str, BaseAdapter] | None = None,
+        researcher: Any | None = None,
+        max_healing_retries: int = 1,
+        on_diagnostic: Callable[[Any, Step], None] | None = None,
+    ):
         self.storage = storage
         self.adapters = adapters or DEFAULT_ADAPTERS
+        self.researcher = researcher
+        self.max_healing_retries = max_healing_retries
+        self.on_diagnostic = on_diagnostic
 
     def run_task(self, task_id: str, timeout_per_step: int = 300) -> Task:
-        """Run all steps of an approved task sequentially."""
+        """Run all steps of an approved task sequentially with bounded self-healing."""
         task = self.storage.get_task(task_id)
         if not task:
             raise KeyError(f"Task '{task_id}' not found.")
@@ -272,6 +307,38 @@ class ExecutionEngine:
                     duration_ms=res.duration_ms,
                 )
             else:
+                diagnosis = None
+                healed = False
+                if self.researcher is not None and self.max_healing_retries > 0:
+                    try:
+                        from envoyr.verifier import diagnose_failure
+                        diagnosis = diagnose_failure(
+                            step.command,
+                            res.stderr,
+                            res.stdout,
+                            researcher=self.researcher,
+                        )
+                        if self.on_diagnostic and diagnosis:
+                            self.on_diagnostic(diagnosis, step)
+
+                        if diagnosis and diagnosis.can_auto_heal:
+                            if diagnosis.remediation_command:
+                                adapter.execute(diagnosis.remediation_command, timeout=60)
+                            retry_res = adapter.execute(step.command, timeout=timeout_per_step)
+                            if retry_res.exit_code == 0:
+                                healed = True
+                                self.storage.update_step(
+                                    step_id=step.id,
+                                    status=StepStatus.SUCCESS,
+                                    exit_code=0,
+                                    stdout=retry_res.stdout,
+                                    stderr=retry_res.stderr,
+                                    duration_ms=res.duration_ms + retry_res.duration_ms,
+                                )
+                                continue
+                    except Exception:
+                        pass
+
                 self.storage.update_step(
                     step_id=step.id,
                     status=StepStatus.FAILED,
@@ -281,6 +348,8 @@ class ExecutionEngine:
                     duration_ms=res.duration_ms,
                 )
                 err_msg = res.stderr.strip() or f"Command failed with exit code {res.exit_code}"
+                if diagnosis and getattr(diagnosis, "display_summary", None):
+                    err_msg = f"{diagnosis.display_summary} (Exit code {res.exit_code})"
                 self.storage.transition_task(
                     task.id,
                     TaskState.FAILED,

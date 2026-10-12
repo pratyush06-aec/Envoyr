@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 from envoyr.agent.provider import LLMClient
 from envoyr.agent.researcher import AgentResearcher
 from envoyr.executor import BaseAdapter, ExecutionResult
-from envoyr.models import TaskState
+from envoyr.models import StepStatus, TaskState
 from envoyr.storage import Storage
 from envoyr.verifier import HealingDiagnosis, Verifier, diagnose_failure
 
@@ -148,6 +148,82 @@ class TestDynamicResearchAndSelfHealing(unittest.TestCase):
         self.assertEqual(task_reloaded.state, TaskState.COMPLETED)
         transitions = self.storage.get_transitions(task.id)
         self.assertIn("self-healing", transitions[-1].reason)
+
+    def test_normalize_wsl_command(self):
+        from envoyr.executor import normalize_wsl_command
+
+        self.assertEqual(normalize_wsl_command("wsl -d Ubuntu"), "uname -a && whoami")
+        self.assertEqual(normalize_wsl_command("wsl.exe -d Ubuntu"), "uname -a && whoami")
+        self.assertEqual(normalize_wsl_command("wsl"), "uname -a && whoami")
+        self.assertEqual(normalize_wsl_command("wsl.exe"), "uname -a && whoami")
+        self.assertEqual(normalize_wsl_command("wsl ~"), "uname -a && whoami")
+        self.assertEqual(normalize_wsl_command("wsl sudo apt update"), "sudo apt update")
+        self.assertEqual(normalize_wsl_command("wsl -d Ubuntu sudo apt update"), "sudo apt update")
+        self.assertEqual(normalize_wsl_command("sudo apt-get update -y"), "sudo apt-get update -y")
+        self.assertEqual(normalize_wsl_command("curl -fsSL https://get.modular.com | sh -"), "curl -fsSL https://get.modular.com | sh -")
+
+    def test_execution_engine_self_healing_during_step_execution(self):
+        from envoyr.executor import ExecutionEngine
+        from envoyr.models import Step
+
+        task = self.storage.create_task("setup wsl tool", target_os="windows", adapter="mock")
+        step1 = Step(
+            id=f"{task.id}-step-1",
+            task_id=task.id,
+            order_idx=0,
+            title="Install package",
+            command="install-pkg",
+            adapter="mock",
+        )
+        self.storage.add_steps(task.id, [step1])
+        self.storage.transition_task(task.id, TaskState.RESEARCHING)
+        self.storage.transition_task(task.id, TaskState.PLANNED)
+        self.storage.transition_task(task.id, TaskState.APPROVED)
+
+        adapter = MockAdapterWithHealing(failure_cmd="install-pkg", remediation_cmd="fix-env")
+        mock_researcher = MagicMock(spec=AgentResearcher)
+        mock_researcher.diagnose_failure.return_value = HealingDiagnosis(
+            failure_type="ENV_ERROR",
+            analysis="Environment missing package configuration.",
+            suggested_fix="Run fix-env script.",
+            can_auto_heal=True,
+            remediation_command="fix-env",
+            non_technical_summary="Setup environment needs initialization.",
+        )
+
+        engine = ExecutionEngine(
+            storage=self.storage,
+            adapters={"mock": adapter},
+            researcher=mock_researcher,
+            max_healing_retries=1,
+        )
+        updated_task = engine.run_task(task.id)
+
+        self.assertEqual(updated_task.state, TaskState.VERIFYING)
+        self.assertTrue(adapter.remediation_run)
+        step_reloaded = self.storage.get_task(task.id).steps[0]
+        self.assertEqual(step_reloaded.status, StepStatus.SUCCESS)
+
+    def test_wsl_diagnose_failure_and_non_technical_summary(self):
+        diag = diagnose_failure("wsl -d Ubuntu", "bash: line 1: wsl: command not found", "")
+        self.assertEqual(diag.failure_type, "WSL_COMMAND_IN_LINUX")
+        self.assertTrue(diag.can_auto_heal)
+        self.assertEqual(diag.display_category, "Environment Configuration (WSL)")
+        self.assertIn("Linux environment", diag.display_summary)
+        self.assertIsNotNone(diag.remediation_command)
+
+        # Test CLI non-technical diagnostic printer
+        import io
+        from contextlib import redirect_stderr
+        from envoyr.cli import print_non_technical_diagnostic
+
+        f = io.StringIO()
+        with redirect_stderr(f):
+            print_non_technical_diagnostic(diag)
+        output = f.getvalue()
+        self.assertIn("[Envoyr AI Diagnostic Report]", output)
+        self.assertIn("Environment Configuration (WSL)", output)
+        self.assertIn("Guidance:", output)
 
 
 if __name__ == "__main__":

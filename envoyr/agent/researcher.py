@@ -23,6 +23,10 @@ Guidelines:
    - Do NOT include dangerous commands (rm -rf /, format, drop db).
 3. Verification:
    - Always provide 1 to 3 smoke test commands (e.g. 'tool --version', 'tool --help') to verify successful installation.
+4. WSL Execution:
+   - If recommended_adapter is 'wsl', install_steps commands MUST be native Linux/bash commands (e.g. 'sudo apt-get update -y', 'curl -fsSL https://... | bash').
+   - NEVER prefix commands with 'wsl', 'wsl.exe', or 'wsl -d <distro>' because the adapter runs inside WSL directly.
+   - Always include non-interactive flags (e.g. -y for apt-get).
 
 You MUST respond strictly with valid JSON without additional conversational text.
 Schema:
@@ -107,10 +111,14 @@ class AgentResearcher:
 
         steps = []
         for idx, s in enumerate(data.get("install_steps", [])):
+            cmd = s.get("command", "echo done")
+            if adapter == "wsl":
+                from envoyr.executor import normalize_wsl_command
+                cmd = normalize_wsl_command(cmd)
             steps.append({
                 "order": s.get("order", idx),
                 "title": s.get("title", f"Step {idx + 1}"),
-                "command": s.get("command", "echo done"),
+                "command": cmd,
                 "adapter": adapter,
             })
 
@@ -139,16 +147,17 @@ class AgentResearcher:
             f"Failed Command: {command}\n"
             f"Stderr:\n{stderr[:1500]}\n"
             f"Stdout:\n{stdout[:500]}\n\n"
-            f"Analyze the root cause and provide structured remediation."
+            f"Analyze the root cause and provide structured remediation with a clear, non-technical explanation for developers."
         )
         system_prompt = (
             "You are Envoyr's diagnostic engine. Respond strictly with JSON in this schema:\n"
             "{\n"
             '  "failure_type": "string (e.g. MISSING_DEPENDENCY, PORT_CONFLICT, CONFIG_ERROR)",\n'
             '  "analysis": "1-2 sentence root cause explanation",\n'
-            '  "suggested_fix": "Clear instruction for the developer",\n'
+            '  "non_technical_summary": "Plain English, jargon-free explanation for a non-technical user describing what went wrong",\n'
+            '  "suggested_fix": "Clear instruction or next step for the developer",\n'
             '  "can_auto_heal": boolean,\n'
-            '  "remediation_command": "safe shell command to run, or null"\n'
+            '  "remediation_command": "safe shell command to run if auto-healing is possible, or null"\n'
             "}"
         )
         try:
@@ -164,6 +173,7 @@ class AgentResearcher:
                     suggested_fix=data.get("suggested_fix", "Review error logs and configuration."),
                     can_auto_heal=bool(data.get("can_auto_heal", False)),
                     remediation_command=data.get("remediation_command"),
+                    non_technical_summary=data.get("non_technical_summary"),
                 )
         except Exception:
             pass
