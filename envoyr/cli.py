@@ -1,6 +1,7 @@
 """Envoyr CLI - Command-line interface for the development environment orchestrator."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -458,7 +459,27 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def load_env_file(path: Path | None = None) -> None:
+    """Load key-value pairs from .env.local or .env into os.environ if not already present."""
+    candidates = [Path(".env.local"), Path(".env")] if path is None else [path]
+    for p in candidates:
+        if p.exists() and p.is_file():
+            try:
+                for line in p.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+            except Exception:
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    load_env_file()
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

@@ -13,4 +13,9 @@ build/
 
 # Envoyr runtime state
 .envoyr/
-*.db
+*.db
+
+# Environment variables and secrets
+.env.local
+.env.*.local
+*.local.env
