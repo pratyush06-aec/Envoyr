@@ -115,7 +115,12 @@ A verified developer-toolchain setup workflow, starting with Midnight on Windows
 - **Completed Milestones:**
   - **Phase 0 — Repository and Development Foundation:** Repository setup, pyproject.toml, standard library architecture, and test suite.
   - **Phase 1 — CLI and Structured Task Model:** Typed task contracts, SQLite persistence (`tasks`, `steps`, `state_transitions`), state transition validation engine, and `envoyr` CLI (`setup`, `list`, `status`, `history`, `transition`).
-  - **Phase 2 — Documentation Research:** Upstream doc research, cited sources, OS compatibility matrix, prerequisite derivation, and toolchain profiling.
-- **Active Milestone:** Phase 3 — Planning and Human-in-the-Loop.
+  - **Phase 2 — Documentation Research Engine:** Upstream doc retrieval, cited sources, OS compatibility matrix, prerequisite derivation, and toolchain profiling.
+  - **Phase 3 — Planning & Human-in-the-Loop Gate:** DAG topological ordering, safety blocked-pattern denylist, plan inspection, and approval gate (`plan`, `approve`, `reject`).
+  - **Phase 4 — Controlled Execution Engine:** Multi-adapter runner (`LocalAdapter`, `WSLAdapter`, `RemoteAdapter`) with per-step timeouts, stdout/stderr capture, and fail-fast task status updates (`envoyr run`).
+  - **Phase 5 — Verification & Bounded Self-Healing:** Post-installation smoke test runner, root-cause error diagnostics (`PATH_OR_BINARY_MISSING`, `PERMISSION_DENIED`, `NETWORK_TRANSIENT`), and automated retry recovery (`envoyr verify`).
+  - **Phase 6 — Ecosystem Integrations:** Structured telemetry event streaming via `NeatlogsTracer` and compute unit economics / cost savings calculation via `EconomicsCalculator` (cfo.ai).
+  - **Phase 7 — Remote Linux Micro-VM Execution:** Offloaded execution for complex Linux-dependent developer toolchains (e.g. Midnight on Windows without Docker Desktop) via configurable SSH and isolated micro-VM sandboxes.
+- **Test Suite Status:** 33 unit tests across 5 test suites (`test_tasks`, `test_research`, `test_planner`, `test_executor`, `test_verifier`, `test_integrations`), 100% passing.
 - **Observability & Workflow:** Integrated with Entire for session checkpoints and neatlogs for agent execution tracing.
 
