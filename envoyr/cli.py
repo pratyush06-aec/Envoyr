@@ -10,6 +10,7 @@ from envoyr.models import Step, TaskState
 from envoyr.planner import format_plan_inspection, validate_plan_safety
 from envoyr.research import research_toolchain
 from envoyr.storage import DEFAULT_DB_PATH, Storage
+from envoyr.verifier import Verifier
 
 
 def _format_task_summary(task) -> str:
@@ -220,7 +221,60 @@ def cmd_run(args) -> int:
         print(f"\n[!] Execution FAILED: {updated_task.error_message}", file=sys.stderr)
         return 1
     print(f"\n+ Task {task.id} execution completed. State: {updated_task.state.value}")
+
+    if not getattr(args, "no_verify", False):
+        print(f"\n[4/5] Running verification smoke tests...")
+        verifier = Verifier(storage)
+        passed, results, diagnosis = verifier.verify_task(task.id)
+        for r in results:
+            mark = "[PASS]" if r.passed else "[FAIL]"
+            detail = f" - {r.output}" if r.output else (f" - {r.error_message}" if r.error_message else "")
+            print(f"      {mark} {r.command}{detail}")
+        if passed:
+            print(f"\n[5/5] All verification tests passed! Task {task.id} is COMPLETED.")
+            return 0
+        else:
+            print(f"\n[!] Verification FAILED for Task {task.id}.", file=sys.stderr)
+            if diagnosis:
+                print(f"    Root Cause:    {diagnosis.failure_type}", file=sys.stderr)
+                print(f"    Analysis:      {diagnosis.analysis}", file=sys.stderr)
+                print(f"    Suggested Fix: {diagnosis.suggested_fix}", file=sys.stderr)
+            return 1
     return 0
+
+
+def cmd_verify(args) -> int:
+    storage = Storage(args.db_path)
+    task = storage.get_task(args.task_id)
+    if not task:
+        print(f"Error: Task '{args.task_id}' not found.", file=sys.stderr)
+        return 1
+    if task.state not in (TaskState.VERIFYING, TaskState.EXECUTING, TaskState.COMPLETED):
+        print(
+            f"Error: Task {task.id} is in '{task.state.value}' state; must be in VERIFYING state to run verification.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"\n[4/5] Running verification smoke tests for Task {task.id}...")
+    verifier = Verifier(storage)
+    passed, results, diagnosis = verifier.verify_task(task.id)
+
+    for r in results:
+        mark = "[PASS]" if r.passed else "[FAIL]"
+        detail = f" - {r.output}" if r.output else (f" - {r.error_message}" if r.error_message else "")
+        print(f"      {mark} {r.command}{detail}")
+
+    if passed:
+        print(f"\n[5/5] Verification SUCCESS! Task {task.id} is COMPLETED.")
+        return 0
+    else:
+        print(f"\n[!] Verification FAILED for Task {task.id}.", file=sys.stderr)
+        if diagnosis:
+            print(f"    Root Cause:    {diagnosis.failure_type}", file=sys.stderr)
+            print(f"    Analysis:      {diagnosis.analysis}", file=sys.stderr)
+            print(f"    Suggested Fix: {diagnosis.suggested_fix}", file=sys.stderr)
+        return 1
 
 
 
@@ -353,7 +407,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=300,
         help="Per-step timeout in seconds (default: 300)",
     )
+    p_run.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="Skip post-installation smoke test verification",
+    )
     p_run.set_defaults(func=cmd_run)
+
+    # verify
+    p_ver = subparsers.add_parser("verify", help="Run verification smoke tests for task")
+    p_ver.add_argument("task_id", help="Task identifier")
+    p_ver.set_defaults(func=cmd_verify)
 
     # list
     p_list = subparsers.add_parser("list", help="List recent tasks")

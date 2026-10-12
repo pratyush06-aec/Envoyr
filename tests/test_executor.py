@@ -137,7 +137,7 @@ class TestExecutionEngine(unittest.TestCase):
         self.storage.transition_task(task.id, TaskState.PLANNED)
         self.storage.transition_task(task.id, TaskState.APPROVED)
 
-        ret = main(["--db-path", str(self.db_path), "run", task.id])
+        ret = main(["--db-path", str(self.db_path), "run", task.id, "--no-verify"])
         self.assertEqual(ret, 0)
 
         task_after = self.storage.get_task(task.id)
