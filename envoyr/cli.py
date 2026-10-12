@@ -6,6 +6,7 @@ from pathlib import Path
 
 from envoyr import __version__
 from envoyr.models import Step, TaskState
+from envoyr.planner import format_plan_inspection, validate_plan_safety
 from envoyr.research import research_toolchain
 from envoyr.storage import DEFAULT_DB_PATH, Storage
 
@@ -26,7 +27,7 @@ def _format_task_summary(task) -> str:
     if task.steps:
         lines.append(f"Steps:     ({len(task.steps)} total)")
         for s in task.steps:
-            mark = "[✓]" if s.status.value == "SUCCESS" else f"[{s.status.value}]"
+            mark = "[OK]" if s.status.value == "SUCCESS" else f"[{s.status.value}]"
             lines.append(f"  {mark} #{s.order_idx + 1} {s.title} ({s.adapter})")
     return "\n".join(lines)
 
@@ -43,7 +44,7 @@ def cmd_research(args) -> int:
     print("\nPrerequisites:")
     for p in profile.prerequisites:
         ver = f" (>= {p.min_version})" if p.min_version else ""
-        print(f"  ✓ {p.name}{ver}: {p.description}")
+        print(f"  + {p.name}{ver}: {p.description}")
     print(f"\nVerification smoke tests: {', '.join(profile.smoke_tests)}")
     return 0
 
@@ -55,13 +56,13 @@ def cmd_setup(args) -> int:
     print(f"[1/5] Researching official documentation for: '{args.intent}'...")
     profile = research_toolchain(args.intent, target_os=args.target_os)
     for src in profile.sources:
-        print(f"      ✓ Retrieved documentation from {src}")
+        print(f"      + Retrieved documentation from {src}")
     prereq_names = ", ".join(p.name for p in profile.prerequisites)
-    print(f"      ✓ Resolved prerequisite toolchain: {prereq_names}")
-    print(f"      ✓ Compatibility analysis: {profile.compatibility_notes}")
+    print(f"      + Resolved prerequisite toolchain: {prereq_names}")
+    print(f"      + Compatibility analysis: {profile.compatibility_notes}")
 
     chosen_adapter = args.adapter if args.adapter != "local" else profile.recommended_adapter
-    print(f"      ✓ Selected execution path: {chosen_adapter.upper()} adapter")
+    print(f"      + Selected execution path: {chosen_adapter.upper()} adapter")
 
     # 2. Task creation and state transition
     task = storage.create_task(
@@ -93,9 +94,92 @@ def cmd_setup(args) -> int:
 
     print(f"\n[2/5] Synthesized Execution Plan (Task {task.id}):")
     for s in steps:
-        print(f"      ├── Step {s.order_idx + 1}: {s.title} [{s.adapter}]")
+        print(f"      |-- Step {s.order_idx + 1}: {s.title} [{s.adapter}]")
 
-    print("\nTask state is now PLANNED (Awaiting Human Approval Gate).")
+    is_safe, error_msg = validate_plan_safety(steps)
+    if not is_safe:
+        print(f"\n[!]  {error_msg}")
+
+    if getattr(args, "yes", False):
+        if not is_safe:
+            print(f"Cannot auto-approve task due to safety gate: {error_msg}", file=sys.stderr)
+            return 1
+        storage.transition_task(task.id, TaskState.APPROVED, reason="Auto-approved via --yes")
+        print(f"\n+ Task {task.id} automatically approved for execution.")
+    elif getattr(args, "interactive", False) or (sys.stdin.isatty() and not getattr(args, "no_prompt", False)):
+        while True:
+            try:
+                choice = input("\nProceed with execution? [y/N/inspect]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                choice = "n"
+            if choice == "inspect":
+                print("\n" + format_plan_inspection(task.id, steps))
+                continue
+            elif choice in ("y", "yes"):
+                if not is_safe:
+                    print(f"Cannot approve task: {error_msg}", file=sys.stderr)
+                    return 1
+                storage.transition_task(task.id, TaskState.APPROVED, reason="Approved interactively by user")
+                print(f"+ Task {task.id} approved for execution.")
+                break
+            else:
+                print(f"Task remains in PLANNED state. Run 'envoyr approve {task.id}' when ready.")
+                break
+    else:
+        print("\nTask state is now PLANNED (Awaiting Human Approval Gate).")
+        print(f"Run 'envoyr plan {task.id}' to inspect, or 'envoyr approve {task.id}' to approve.")
+
+    return 0
+
+
+def cmd_plan(args) -> int:
+    storage = Storage(args.db_path)
+    task = storage.get_task(args.task_id)
+    if not task:
+        print(f"Error: Task '{args.task_id}' not found.", file=sys.stderr)
+        return 1
+    if not task.steps:
+        print(f"No steps planned for task {task.id}.")
+        return 0
+    print(format_plan_inspection(task.id, task.steps))
+    is_safe, error_msg = validate_plan_safety(task.steps)
+    if not is_safe:
+        print(f"\n[SAFETY GATE: BLOCKED] {error_msg}", file=sys.stderr)
+        return 1
+    print("\nPlan policy check: PASSED (No blocked commands detected).")
+    return 0
+
+
+def cmd_approve(args) -> int:
+    storage = Storage(args.db_path)
+    task = storage.get_task(args.task_id)
+    if not task:
+        print(f"Error: Task '{args.task_id}' not found.", file=sys.stderr)
+        return 1
+    if task.state != TaskState.PLANNED:
+        print(
+            f"Error: Task {task.id} is in '{task.state.value}' state; must be PLANNED to approve.",
+            file=sys.stderr,
+        )
+        return 1
+    is_safe, error_msg = validate_plan_safety(task.steps)
+    if not is_safe:
+        print(f"Error: Cannot approve task. {error_msg}", file=sys.stderr)
+        return 1
+    storage.transition_task(task.id, TaskState.APPROVED, reason="Approved by user")
+    print(f"+ Task {task.id} approved for execution.")
+    return 0
+
+
+def cmd_reject(args) -> int:
+    storage = Storage(args.db_path)
+    task = storage.get_task(args.task_id)
+    if not task:
+        print(f"Error: Task '{args.task_id}' not found.", file=sys.stderr)
+        return 1
+    reason = args.reason or "Rejected by user"
+    storage.transition_task(task.id, TaskState.CANCELLED, reason=reason)
+    print(f"+ Task {task.id} rejected and cancelled ({reason}).")
     return 0
 
 
@@ -186,7 +270,34 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["local", "wsl", "remote"],
         help="Execution adapter (default: local)",
     )
+    p_setup.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Automatically approve synthesized plan for execution",
+    )
+    p_setup.add_argument(
+        "--no-prompt",
+        action="store_true",
+        help="Do not prompt interactively if running in terminal",
+    )
     p_setup.set_defaults(func=cmd_setup)
+
+    # plan
+    p_plan = subparsers.add_parser("plan", help="Inspect synthesized plan and policy risk levels")
+    p_plan.add_argument("task_id", help="Task identifier")
+    p_plan.set_defaults(func=cmd_plan)
+
+    # approve
+    p_app = subparsers.add_parser("approve", help="Approve planned task for execution")
+    p_app.add_argument("task_id", help="Task identifier")
+    p_app.set_defaults(func=cmd_approve)
+
+    # reject
+    p_rej = subparsers.add_parser("reject", help="Reject and cancel planned task")
+    p_rej.add_argument("task_id", help="Task identifier")
+    p_rej.add_argument("--reason", default="Rejected by user", help="Reason for cancellation")
+    p_rej.set_defaults(func=cmd_reject)
 
     # list
     p_list = subparsers.add_parser("list", help="List recent tasks")
