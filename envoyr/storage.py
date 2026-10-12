@@ -82,6 +82,12 @@ class Storage:
                     timestamp TEXT NOT NULL,
                     FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS research_cache (
+                    query_key TEXT PRIMARY KEY,
+                    profile_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -288,6 +294,14 @@ class Storage:
                 (status.value, exit_code, stdout, stderr, duration_ms, now, step_id),
             )
 
+    def update_step_command(self, step_id: str, command: str) -> None:
+        now = _now_iso()
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE steps SET command = ?, updated_at = ? WHERE id = ?",
+                (command, now, step_id),
+            )
+
     def get_transitions(self, task_id: str) -> list[StateTransition]:
         with self._get_connection() as conn:
             rows = conn.execute(
@@ -305,3 +319,27 @@ class Storage:
             )
             for r in rows
         ]
+
+    def save_cached_profile(self, intent: str, target_os: str, profile_json: str) -> None:
+        key = f"{target_os.lower()}:{intent.strip().lower()}"
+        now = _now_iso()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO research_cache (query_key, profile_json, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(query_key) DO UPDATE SET profile_json = excluded.profile_json, created_at = excluded.created_at
+                """,
+                (key, profile_json, now),
+            )
+
+    def get_cached_profile(self, intent: str, target_os: str) -> str | None:
+        key = f"{target_os.lower()}:{intent.strip().lower()}"
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT profile_json FROM research_cache WHERE query_key = ?", (key,)
+            ).fetchone()
+            if row:
+                return row["profile_json"]
+            return None
+

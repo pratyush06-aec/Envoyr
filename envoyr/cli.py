@@ -123,11 +123,27 @@ def cmd_setup(args) -> int:
     elif getattr(args, "interactive", False) or (sys.stdin.isatty() and not getattr(args, "no_prompt", False)):
         while True:
             try:
-                choice = input("\nProceed with execution? [y/N/inspect]: ").strip().lower()
+                choice = input("\nProceed with execution? [y/N/inspect/edit]: ").strip().lower()
             except (EOFError, KeyboardInterrupt):
                 choice = "n"
             if choice == "inspect":
                 print("\n" + format_plan_inspection(task.id, steps))
+                continue
+            elif choice == "edit":
+                print("\nPlanned Steps:")
+                for idx, s in enumerate(steps):
+                    print(f"  [{idx + 1}] {s.title} ({s.adapter}): {s.command}")
+                try:
+                    step_sel = input("Enter step number to edit command (or Enter to cancel): ").strip()
+                    if step_sel.isdigit() and 1 <= int(step_sel) <= len(steps):
+                        target_s = steps[int(step_sel) - 1]
+                        new_c = input(f"New command for Step {step_sel} [current: '{target_s.command}']: ").strip()
+                        if new_c:
+                            target_s.command = new_c
+                            storage.update_step_command(target_s.id, new_c)
+                            print(f"+ Step {step_sel} updated.")
+                except (EOFError, KeyboardInterrupt):
+                    pass
                 continue
             elif choice in ("y", "yes"):
                 if not is_safe:
@@ -564,12 +580,76 @@ def load_env_file(path: Path | None = None) -> None:
                 pass
 
 
+KNOWN_SUBCOMMANDS = {
+    "demo", "research", "setup", "plan", "approve", "reject",
+    "run", "verify", "list", "status", "history", "transition",
+    "-h", "--help", "-v", "--version",
+}
+
+
+def repl_shell(db_path: Path = DEFAULT_DB_PATH) -> int:
+    """Interactive conversational shell for natural-language orchestration."""
+    print("=" * 70)
+    print(" Envoyr — AI Development Environment Orchestrator (Interactive Shell)")
+    print(" Type a natural language setup intent (e.g. 'Setup Bun runtime')")
+    print(" Type 'exit' or 'quit' to exit.")
+    print("=" * 70)
+    while True:
+        try:
+            line = input("\nenvoyr> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nExiting Envoyr.")
+            break
+        if not line:
+            continue
+        if line.lower() in ("exit", "quit", "q"):
+            print("Goodbye.")
+            break
+        try:
+            main(["setup", line, "--db-path", str(db_path)])
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_env_file()
+    args_list = list(sys.argv[1:] if argv is None else argv)
+
+    # If no arguments provided and stdin is a terminal, launch interactive REPL
+    if not args_list:
+        if sys.stdin.isatty():
+            return repl_shell()
+        build_parser().print_help()
+        return 0
+
+    # Separate top-level flags (like --db-path) from subcommands
+    clean_args: list[str] = []
+    top_flags: list[str] = []
+    i = 0
+    while i < len(args_list):
+        if args_list[i] == "--db-path" and i + 1 < len(args_list):
+            top_flags.extend(["--db-path", args_list[i + 1]])
+            i += 2
+        elif args_list[i].startswith("--db-path="):
+            top_flags.append(args_list[i])
+            i += 1
+        else:
+            clean_args.append(args_list[i])
+            i += 1
+
+    # Natural-language prompt shorthand: if first arg is not a known subcommand or flag,
+    # auto-route to 'setup <intent>'
+    first_arg = clean_args[0] if clean_args else ""
+    if first_arg and not first_arg.startswith("-") and first_arg not in KNOWN_SUBCOMMANDS:
+        clean_args = ["setup"] + clean_args
+
+    final_args = top_flags + clean_args
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(final_args)
     return args.func(args)
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

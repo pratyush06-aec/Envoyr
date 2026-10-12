@@ -172,49 +172,12 @@ def fetch_url_text(url: str, timeout_sec: float = 3.0) -> str | None:
 
 
 def research_toolchain(intent: str, target_os: str = "windows") -> ToolchainProfile:
-    """Analyze natural-language setup intent and generate evidence-grounded profile."""
-    intent_lower = intent.lower()
+    """Analyze natural-language setup intent and generate evidence-grounded profile.
 
-    if "midnight" in intent_lower or "compact" in intent_lower:
-        key = "midnight"
-    elif "foundry" in intent_lower or "forge" in intent_lower or "anvil" in intent_lower:
-        key = "foundry"
-    elif "solana" in intent_lower or "agave" in intent_lower:
-        key = "solana"
-    elif "cosmwasm" in intent_lower or "wasmd" in intent_lower:
-        key = "cosmwasm"
-    else:
-        key = "rust"
-    raw = KNOWN_PROFILES.get(key, KNOWN_PROFILES["rust"])
+    Delegates to dynamic AgentResearcher (which leverages live LLM reasoning
+    when configured, or intelligent heuristic synthesis when offline).
+    """
+    from envoyr.agent.researcher import AgentResearcher
 
-    recommended_adapter = (
-        raw["windows_adapter"] if target_os.lower() == "windows" else raw["linux_adapter"]
-    )
-
-    prereqs = [
-        Prerequisite(
-            name=p["name"],
-            min_version=p.get("min_version"),
-            description=p.get("description", ""),
-            install_command=p.get("install_command", ""),
-        )
-        for p in raw["prerequisites"]
-    ]
-
-    # Map steps adapting to the selected adapter
-    steps = []
-    for s in raw["install_steps"]:
-        step_dict = dict(s)
-        step_dict["adapter"] = recommended_adapter
-        steps.append(step_dict)
-
-    return ToolchainProfile(
-        name=raw["name"],
-        target_os=target_os,
-        recommended_adapter=recommended_adapter,
-        sources=list(raw["sources"]),
-        compatibility_notes=raw["compatibility_notes"],
-        prerequisites=prereqs,
-        install_steps=steps,
-        smoke_tests=list(raw["smoke_tests"]),
-    )
+    researcher = AgentResearcher()
+    return researcher.research(intent, target_os=target_os)
