@@ -17,26 +17,26 @@ from envoyr.storage import Storage
 
 class TestLLMClient(unittest.TestCase):
     def test_unconfigured_state(self):
-        client = LLMClient(gemini_api_key="", openai_api_key="")
+        client = LLMClient(gemini_api_key="", groq_api_key="", openai_api_key="")
         self.assertFalse(client.is_configured)
         self.assertEqual(client.provider_name, "none")
         with self.assertRaises(RuntimeError):
             client.generate("test prompt")
 
     def test_provider_name_detection(self):
-        c1 = LLMClient(gemini_api_key="test_gemini_key")
+        c1 = LLMClient(gemini_api_key="test_gemini_key", groq_api_key="", openai_api_key="")
         self.assertTrue(c1.is_configured)
         self.assertEqual(c1.provider_name, "gemini")
 
-        c2 = LLMClient(gemini_api_key="", openai_api_key="test_openai_key")
+        c2 = LLMClient(gemini_api_key="", groq_api_key="", openai_api_key="test_openai_key")
         self.assertTrue(c2.is_configured)
         self.assertEqual(c2.provider_name, "openai")
 
-        c3 = LLMClient(groq_api_key="gsk_mock_key")
+        c3 = LLMClient(gemini_api_key="", groq_api_key="gsk_mock_key", openai_api_key="")
         self.assertTrue(c3.is_configured)
         self.assertEqual(c3.provider_name, "groq")
         self.assertEqual(c3.groq_base_url, "https://api.groq.com/openai/v1")
-        self.assertEqual(c3.groq_model, "llama-3.3-70b-versatile")
+        self.assertEqual(c3.groq_model, "gpt-oss")
 
     def test_json_extraction_from_markdown_fences(self):
         fenced = "```json\n{\"name\": \"TestTool\", \"steps\": [1, 2]}\n```"

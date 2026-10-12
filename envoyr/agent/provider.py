@@ -14,6 +14,14 @@ import urllib.request
 from typing import Any
 
 
+# Groq model alias mapping (translates friendly names to Groq API identifiers)
+GROQ_MODEL_ALIASES: dict[str, str] = {
+    "gpt-oss": "openai/gpt-oss-120b",
+    "gpt-oss-120b": "openai/gpt-oss-120b",
+    "gpt-oss-20b": "openai/gpt-oss-20b",
+}
+
+
 class LLMClient:
     """Lightweight REST client for LLM providers without third-party dependencies."""
 
@@ -25,13 +33,13 @@ class LLMClient:
         openai_base_url: str | None = None,
         openai_model: str | None = None,
     ):
-        self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
-        self.groq_api_key = groq_api_key or os.getenv("GROQ_API_KEY")
-        self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+        self.gemini_api_key = gemini_api_key if gemini_api_key is not None else os.getenv("GEMINI_API_KEY")
+        self.groq_api_key = groq_api_key if groq_api_key is not None else os.getenv("GROQ_API_KEY")
+        self.openai_api_key = openai_api_key if openai_api_key is not None else os.getenv("OPENAI_API_KEY")
 
-        # Groq endpoint defaults (ultra-fast inference, Llama 3.3 70B default)
+        # Groq endpoint defaults (ultra-fast inference, gpt-oss default)
         self.groq_base_url = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-        self.groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.groq_model = os.getenv("GROQ_MODEL", "gpt-oss")
 
         # OpenAI / generic OpenAI-compatible endpoint defaults
         self.openai_base_url = openai_base_url or os.getenv(
@@ -173,8 +181,11 @@ class LLMClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        # Resolve model aliases if calling Groq (e.g. gpt-oss -> openai/gpt-oss-120b)
+        model_id = GROQ_MODEL_ALIASES.get(model, model) if provider_label == "Groq" else model
+
         body = {
-            "model": model,
+            "model": model_id,
             "messages": messages,
             "temperature": 0.2,
         }
