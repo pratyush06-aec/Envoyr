@@ -6,6 +6,7 @@ from pathlib import Path
 
 from envoyr import __version__
 from envoyr.executor import ExecutionEngine
+from envoyr.integrations import EconomicsCalculator, NeatlogsTracer
 from envoyr.models import Step, TaskState
 from envoyr.planner import format_plan_inspection, validate_plan_safety
 from envoyr.research import research_toolchain
@@ -27,6 +28,8 @@ def _format_task_summary(task) -> str:
     if task.error_message:
         lines.append(f"Error:     {task.error_message}")
     if task.steps:
+        econ = EconomicsCalculator.calculate_cost(task)
+        lines.append(f"Economics: {econ.summary}")
         lines.append(f"Steps:     ({len(task.steps)} total)")
         for s in task.steps:
             mark = "[OK]" if s.status.value == "SUCCESS" else f"[{s.status.value}]"
@@ -214,9 +217,14 @@ def cmd_run(args) -> int:
         )
         return 1
 
+    tracer = NeatlogsTracer()
+    tracer.record_event("task_execution_started", task.id, {"steps": len(task.steps), "adapter": task.adapter})
+
     print(f"\n[3/5] Executing {len(task.steps)} step(s) for Task {task.id}:")
     engine = ExecutionEngine(storage)
     updated_task = engine.run_task(task.id, timeout_per_step=args.timeout)
+    tracer.record_event("task_execution_finished", task.id, {"state": updated_task.state.value})
+
     if updated_task.state == TaskState.FAILED:
         print(f"\n[!] Execution FAILED: {updated_task.error_message}", file=sys.stderr)
         return 1
@@ -231,7 +239,10 @@ def cmd_run(args) -> int:
             detail = f" - {r.output}" if r.output else (f" - {r.error_message}" if r.error_message else "")
             print(f"      {mark} {r.command}{detail}")
         if passed:
+            final_task = storage.get_task(task.id) or updated_task
+            econ = EconomicsCalculator.calculate_cost(final_task)
             print(f"\n[5/5] All verification tests passed! Task {task.id} is COMPLETED.")
+            print(f"      [Economics] {econ.summary}")
             return 0
         else:
             print(f"\n[!] Verification FAILED for Task {task.id}.", file=sys.stderr)
@@ -240,6 +251,9 @@ def cmd_run(args) -> int:
                 print(f"    Analysis:      {diagnosis.analysis}", file=sys.stderr)
                 print(f"    Suggested Fix: {diagnosis.suggested_fix}", file=sys.stderr)
             return 1
+
+    econ = EconomicsCalculator.calculate_cost(updated_task)
+    print(f"      [Economics] {econ.summary}")
     return 0
 
 
