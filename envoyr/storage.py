@@ -181,6 +181,25 @@ class Storage:
             for r in rows
         ]
 
+    def update_research(
+        self,
+        task_id: str,
+        research_summary: str,
+        adapter: str | None = None,
+    ) -> None:
+        now = _now_iso()
+        with self._get_connection() as conn:
+            if adapter:
+                conn.execute(
+                    "UPDATE tasks SET research_summary = ?, adapter = ?, updated_at = ? WHERE id = ?",
+                    (research_summary, adapter, now, task_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE tasks SET research_summary = ?, updated_at = ? WHERE id = ?",
+                    (research_summary, now, task_id),
+                )
+
     def transition_task(
         self,
         task_id: str,

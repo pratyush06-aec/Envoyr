@@ -130,7 +130,7 @@ class TestEnvoyrTaskEngine(unittest.TestCase):
             ret = main(["--db-path", str(self.db_path), "setup", "Install Rust and Compact"])
             self.assertEqual(ret, 0)
             output = out.getvalue()
-            self.assertIn("Envoyr initialized task:", output)
+            self.assertIn("Synthesized Execution Plan", output)
 
         tasks = self.storage.list_tasks()
         self.assertEqual(len(tasks), 1)
@@ -146,22 +146,23 @@ class TestEnvoyrTaskEngine(unittest.TestCase):
         with patch("sys.stdout", new=io.StringIO()) as out:
             ret = main(["--db-path", str(self.db_path), "status", tid])
             self.assertEqual(ret, 0)
-            self.assertIn("PENDING", out.getvalue())
+            self.assertIn("PLANNED", out.getvalue())
 
         # 4. Transition
         with patch("sys.stdout", new=io.StringIO()) as out:
             ret = main(
-                ["--db-path", str(self.db_path), "transition", tid, "RESEARCHING", "--reason", "cli test"]
+                ["--db-path", str(self.db_path), "transition", tid, "APPROVED", "--reason", "cli approval"]
             )
             self.assertEqual(ret, 0)
-            self.assertIn("transitioned to RESEARCHING", out.getvalue())
+            self.assertIn("transitioned to APPROVED", out.getvalue())
 
         # 5. History
         with patch("sys.stdout", new=io.StringIO()) as out:
             ret = main(["--db-path", str(self.db_path), "history", tid])
             self.assertEqual(ret, 0)
-            self.assertIn("PENDING -> RESEARCHING", out.getvalue())
+            self.assertIn("PLANNED -> APPROVED", out.getvalue())
 
 
 if __name__ == "__main__":
     unittest.main()
+

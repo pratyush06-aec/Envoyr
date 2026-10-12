@@ -5,7 +5,8 @@ import sys
 from pathlib import Path
 
 from envoyr import __version__
-from envoyr.models import TaskState
+from envoyr.models import Step, TaskState
+from envoyr.research import research_toolchain
 from envoyr.storage import DEFAULT_DB_PATH, Storage
 
 
@@ -18,6 +19,8 @@ def _format_task_summary(task) -> str:
         f"Adapter:   {task.adapter}",
         f"Created:   {task.created_at}",
     ]
+    if task.research_summary:
+        lines.append(f"Research:  {task.research_summary}")
     if task.error_message:
         lines.append(f"Error:     {task.error_message}")
     if task.steps:
@@ -28,18 +31,73 @@ def _format_task_summary(task) -> str:
     return "\n".join(lines)
 
 
+def cmd_research(args) -> int:
+    profile = research_toolchain(args.intent, target_os=args.target_os)
+    print(f"Toolchain Profile: {profile.name}")
+    print(f"Target OS:         {profile.target_os}")
+    print(f"Recommended Runner:{profile.recommended_adapter}")
+    print(f"Compatibility:     {profile.compatibility_notes}")
+    print("\nCited Sources:")
+    for src in profile.sources:
+        print(f"  - {src}")
+    print("\nPrerequisites:")
+    for p in profile.prerequisites:
+        ver = f" (>= {p.min_version})" if p.min_version else ""
+        print(f"  ✓ {p.name}{ver}: {p.description}")
+    print(f"\nVerification smoke tests: {', '.join(profile.smoke_tests)}")
+    return 0
+
+
 def cmd_setup(args) -> int:
     storage = Storage(args.db_path)
+
+    # 1. Research phase
+    print(f"[1/5] Researching official documentation for: '{args.intent}'...")
+    profile = research_toolchain(args.intent, target_os=args.target_os)
+    for src in profile.sources:
+        print(f"      ✓ Retrieved documentation from {src}")
+    prereq_names = ", ".join(p.name for p in profile.prerequisites)
+    print(f"      ✓ Resolved prerequisite toolchain: {prereq_names}")
+    print(f"      ✓ Compatibility analysis: {profile.compatibility_notes}")
+
+    chosen_adapter = args.adapter if args.adapter != "local" else profile.recommended_adapter
+    print(f"      ✓ Selected execution path: {chosen_adapter.upper()} adapter")
+
+    # 2. Task creation and state transition
     task = storage.create_task(
         intent=args.intent,
         target_os=args.target_os,
-        adapter=args.adapter,
+        adapter=chosen_adapter,
     )
-    print(f"Envoyr initialized task: {task.id}")
-    print(f"State: {task.state.value}")
-    print(f"Target OS: {task.target_os} | Adapter: {task.adapter}")
-    print(f"Intent: {task.intent}")
+    storage.transition_task(task.id, TaskState.RESEARCHING, reason="Documentation researched")
+    storage.update_research(
+        task_id=task.id,
+        research_summary=f"Profile: {profile.name}; Adapter: {chosen_adapter}; Sources: {len(profile.sources)}",
+        adapter=chosen_adapter,
+    )
+
+    # 3. Plan synthesis
+    steps = [
+        Step(
+            id=f"step-{idx + 1}",
+            task_id=task.id,
+            order_idx=s["order"],
+            title=s["title"],
+            command=s["command"],
+            adapter=s.get("adapter", chosen_adapter),
+        )
+        for idx, s in enumerate(profile.install_steps)
+    ]
+    storage.add_steps(task.id, steps)
+    storage.transition_task(task.id, TaskState.PLANNED, reason="Execution plan synthesized")
+
+    print(f"\n[2/5] Synthesized Execution Plan (Task {task.id}):")
+    for s in steps:
+        print(f"      ├── Step {s.order_idx + 1}: {s.title} [{s.adapter}]")
+
+    print("\nTask state is now PLANNED (Awaiting Human Approval Gate).")
     return 0
+
 
 
 def cmd_list(args) -> int:
@@ -111,6 +169,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # research
+    p_res = subparsers.add_parser("research", help="Research toolchain prerequisites and cited docs")
+    p_res.add_argument("intent", help="Toolchain or setup intent to research")
+    p_res.add_argument("--target-os", default="windows", help="Target OS (default: windows)")
+    p_res.set_defaults(func=cmd_research)
 
     # setup
     p_setup = subparsers.add_parser("setup", help="Initialize a new setup task from intent")
