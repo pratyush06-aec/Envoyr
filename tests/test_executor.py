@@ -70,6 +70,10 @@ class TestExecutionEngine(unittest.TestCase):
 
     def test_remote_adapter(self):
         adapter = RemoteAdapter(endpoint="mock://test-vm")
+        is_ok, msg = adapter.test_connection()
+        self.assertTrue(is_ok)
+        self.assertIn("mock://test-vm", msg)
+
         res = adapter.execute("cargo install envoyr", timeout=30)
         self.assertEqual(res.exit_code, 0)
         self.assertIn("mock://test-vm", res.stdout)
