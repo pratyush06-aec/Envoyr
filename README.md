@@ -124,8 +124,8 @@ A verified developer-toolchain setup workflow, starting with Midnight on Windows
   - **Phase 8 — Midnight Toolchain Profile:** End-to-end orchestration for the Midnight Network toolchain on Windows, verifying Rustup, Compact compiler, contract compilation diagnostics, and remote execution.
   - **Phase 9 — Additional Developer Toolchains:** Expanded evidence-grounded research and profile synthesis to Foundry (Ethereum EVM), Solana CLI, and CosmWasm smart contracts.
   - **Phase 10 — Productization & Interactive Demo:** Streamlined CLI with end-to-end `envoyr demo` showcase, rich diagnostics, CFO.ai unit economics savings reports, and neatlogs telemetry traces.
-  - **Dynamic AI Orchestrator Agent:** Natural language-first CLI interface (`envoyr "<prompt>"`, interactive `envoyr>` REPL), zero-dependency standard-library LLM provider (`Gemini` & `OpenAI`/`Ollama`), live agent research loop, and SQLite persistent research cache.
-- **Test Suite Status:** 52 unit tests across 9 test suites (`test_tasks`, `test_research`, `test_planner`, `test_executor`, `test_verifier`, `test_integrations`, `test_midnight`, `test_toolchains`, `test_agent`), 100% passing.
+  - **Dynamic AI Orchestrator Agent:** Natural language-first CLI interface (`envoyr "<prompt>"`, interactive `envoyr>` REPL), zero-dependency standard-library LLM provider (`Gemini` & `OpenAI`/`Ollama`), live agent research loop, SQLite persistent research cache, dynamic LLM error diagnosis, and automated remediation self-healing.
+- **Test Suite Status:** 56 unit and integration tests across 10 test suites (`test_tasks`, `test_research`, `test_planner`, `test_executor`, `test_verifier`, `test_integrations`, `test_midnight`, `test_toolchains`, `test_agent`, `test_dynamic_research`), 100% passing.
 - **Observability & Workflow:** Integrated with Entire for session checkpoints, neatlogs for agent execution tracing, and cfo.ai for unit economics modeling.
 
 

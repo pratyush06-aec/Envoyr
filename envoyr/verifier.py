@@ -5,7 +5,7 @@ with automated recovery attempts before escalating to the human mentor.
 """
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Any, Mapping
 
 from envoyr.executor import BaseAdapter, ExecutionResult, get_adapter
 from envoyr.models import Task, TaskState
@@ -29,9 +29,15 @@ class HealingDiagnosis:
     analysis: str
     suggested_fix: str
     can_auto_heal: bool
+    remediation_command: str | None = None
 
 
-def diagnose_failure(command: str, stderr: str, stdout: str) -> HealingDiagnosis:
+def diagnose_failure(
+    command: str,
+    stderr: str,
+    stdout: str,
+    researcher: Any | None = None,
+) -> HealingDiagnosis:
     """Analyze error output to identify root causes and remediation actions."""
     combined = (stderr + " " + stdout).lower()
 
@@ -67,6 +73,15 @@ def diagnose_failure(command: str, stderr: str, stdout: str) -> HealingDiagnosis
             can_auto_heal=False,
         )
 
+    # Dynamic AI diagnosis if researcher agent is available
+    if researcher and hasattr(researcher, "diagnose_failure"):
+        try:
+            agent_diag = researcher.diagnose_failure(command, stderr, stdout)
+            if agent_diag:
+                return agent_diag
+        except Exception:
+            pass
+
     return HealingDiagnosis(
         failure_type="UNKNOWN_ERROR",
         analysis="Command exited with unexpected error output.",
@@ -78,9 +93,15 @@ def diagnose_failure(command: str, stderr: str, stdout: str) -> HealingDiagnosis
 class Verifier:
     """Runs smoke tests against verified environments and applies bounded self-healing."""
 
-    def __init__(self, storage: Storage, adapters: Mapping[str, BaseAdapter] | None = None):
+    def __init__(
+        self,
+        storage: Storage,
+        adapters: Mapping[str, BaseAdapter] | None = None,
+        researcher: Any | None = None,
+    ):
         self.storage = storage
         self.adapters = adapters
+        self.researcher = researcher
 
     def verify_task(
         self,
@@ -139,10 +160,12 @@ class Verifier:
 
         # Diagnose the failure
         cmd, res = first_failure  # type: ignore
-        diagnosis = diagnose_failure(cmd, res.stderr, res.stdout)
+        diagnosis = diagnose_failure(cmd, res.stderr, res.stdout, researcher=self.researcher)
 
-        # Attempt self-healing retry if transient network error and retries available
+        # Attempt self-healing retry if auto-healable and retries available
         if diagnosis.can_auto_heal and max_healing_retries > 0:
+            if diagnosis.remediation_command:
+                adapter.execute(diagnosis.remediation_command, timeout=60)
             retry_res = adapter.execute(cmd, timeout=60)
             if retry_res.exit_code == 0:
                 self.storage.transition_task(

@@ -128,3 +128,43 @@ class AgentResearcher:
             install_steps=steps,
             smoke_tests=smoke_tests,
         )
+
+    def diagnose_failure(self, command: str, stderr: str, stdout: str) -> Any | None:
+        """Diagnose an unexpected failure using LLM reasoning if configured."""
+        if not self.llm_client.is_configured:
+            return None
+        from envoyr.verifier import HealingDiagnosis
+        prompt = (
+            f"A command failed during toolchain setup/verification.\n"
+            f"Failed Command: {command}\n"
+            f"Stderr:\n{stderr[:1500]}\n"
+            f"Stdout:\n{stdout[:500]}\n\n"
+            f"Analyze the root cause and provide structured remediation."
+        )
+        system_prompt = (
+            "You are Envoyr's diagnostic engine. Respond strictly with JSON in this schema:\n"
+            "{\n"
+            '  "failure_type": "string (e.g. MISSING_DEPENDENCY, PORT_CONFLICT, CONFIG_ERROR)",\n'
+            '  "analysis": "1-2 sentence root cause explanation",\n'
+            '  "suggested_fix": "Clear instruction for the developer",\n'
+            '  "can_auto_heal": boolean,\n'
+            '  "remediation_command": "safe shell command to run, or null"\n'
+            "}"
+        )
+        try:
+            data = self.llm_client.generate_json(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                timeout=20.0,
+            )
+            if data and isinstance(data, dict) and "analysis" in data:
+                return HealingDiagnosis(
+                    failure_type=data.get("failure_type", "AI_DIAGNOSED_ERROR"),
+                    analysis=data.get("analysis", "Error diagnosed by Envoyr Agent."),
+                    suggested_fix=data.get("suggested_fix", "Review error logs and configuration."),
+                    can_auto_heal=bool(data.get("can_auto_heal", False)),
+                    remediation_command=data.get("remediation_command"),
+                )
+        except Exception:
+            pass
+        return None

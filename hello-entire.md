@@ -124,8 +124,8 @@ A verified developer-toolchain setup workflow, starting with Midnight on Windows
   - **Phase 8 — Midnight Toolchain Profile:** End-to-end orchestration for Midnight on Windows (Rustup, Compact compiler, contract checks, remote execution).
   - **Phase 9 — Additional Toolchains:** Expanded support to Foundry (Ethereum EVM), Solana CLI, and CosmWasm smart contracts.
   - **Phase 10 — Productization and Demo:** Polished CLI experience with end-to-end `envoyr demo` showcase and detailed summaries.
-  - **Dynamic AI Orchestrator Agent:** Natural language-first CLI interface (`envoyr "<prompt>"`, interactive `envoyr>` REPL), zero-dependency standard-library LLM provider (`Gemini` & `OpenAI`/`Ollama`), live agent research loop, and SQLite persistent research cache.
-- **Test Suite Status:** 52 unit tests across 9 test suites, 100% passing.
+  - **Dynamic AI Orchestrator Agent:** Natural language-first CLI interface (`envoyr "<prompt>"`, interactive `envoyr>` REPL), zero-dependency standard-library LLM provider (`Gemini` & `OpenAI`/`Ollama`), live agent research loop, SQLite persistent research cache, dynamic LLM error diagnosis, and automated remediation self-healing.
+- **Test Suite Status:** 56 unit and integration tests across 10 test suites, 100% passing.
 - **Observability & Workflow:** Integrated with Entire for session checkpoints, neatlogs for agent execution tracing, and cfo.ai for unit economics modeling.
 
 

@@ -13,6 +13,7 @@ from envoyr.planner import format_plan_inspection, validate_plan_safety
 from envoyr.research import research_toolchain
 from envoyr.storage import DEFAULT_DB_PATH, Storage
 from envoyr.verifier import Verifier
+from envoyr.agent import AgentResearcher
 
 
 def _format_task_summary(task) -> str:
@@ -249,7 +250,8 @@ def cmd_run(args) -> int:
 
     if not getattr(args, "no_verify", False):
         print(f"\n[4/5] Running verification smoke tests...")
-        verifier = Verifier(storage)
+        researcher = AgentResearcher(storage=storage)
+        verifier = Verifier(storage, researcher=researcher)
         passed, results, diagnosis = verifier.verify_task(task.id)
         for r in results:
             mark = "[PASS]" if r.passed else "[FAIL]"
@@ -267,6 +269,8 @@ def cmd_run(args) -> int:
                 print(f"    Root Cause:    {diagnosis.failure_type}", file=sys.stderr)
                 print(f"    Analysis:      {diagnosis.analysis}", file=sys.stderr)
                 print(f"    Suggested Fix: {diagnosis.suggested_fix}", file=sys.stderr)
+                if diagnosis.remediation_command:
+                    print(f"    Auto-heal Cmd: {diagnosis.remediation_command}", file=sys.stderr)
             return 1
 
     econ = EconomicsCalculator.calculate_cost(updated_task)
@@ -288,7 +292,8 @@ def cmd_verify(args) -> int:
         return 1
 
     print(f"\n[4/5] Running verification smoke tests for Task {task.id}...")
-    verifier = Verifier(storage)
+    researcher = AgentResearcher(storage=storage)
+    verifier = Verifier(storage, researcher=researcher)
     passed, results, diagnosis = verifier.verify_task(task.id)
 
     for r in results:
@@ -305,6 +310,8 @@ def cmd_verify(args) -> int:
             print(f"    Root Cause:    {diagnosis.failure_type}", file=sys.stderr)
             print(f"    Analysis:      {diagnosis.analysis}", file=sys.stderr)
             print(f"    Suggested Fix: {diagnosis.suggested_fix}", file=sys.stderr)
+            if diagnosis.remediation_command:
+                print(f"    Auto-heal Cmd: {diagnosis.remediation_command}", file=sys.stderr)
         return 1
 
 
@@ -424,7 +431,8 @@ def cmd_demo(args) -> int:
 
     # 4. Smoke Verification
     print(f"\n[4/5] Running verification smoke tests...")
-    verifier = Verifier(storage)
+    researcher = AgentResearcher(storage=storage)
+    verifier = Verifier(storage, researcher=researcher)
     passed, results, diagnosis = verifier.verify_task(task.id)
     for r in results:
         mark = "[PASS]" if r.passed else "[FAIL]"
