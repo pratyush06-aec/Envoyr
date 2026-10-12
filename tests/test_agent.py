@@ -32,6 +32,12 @@ class TestLLMClient(unittest.TestCase):
         self.assertTrue(c2.is_configured)
         self.assertEqual(c2.provider_name, "openai")
 
+        c3 = LLMClient(groq_api_key="gsk_mock_key")
+        self.assertTrue(c3.is_configured)
+        self.assertEqual(c3.provider_name, "groq")
+        self.assertEqual(c3.groq_base_url, "https://api.groq.com/openai/v1")
+        self.assertEqual(c3.groq_model, "llama-3.3-70b-versatile")
+
     def test_json_extraction_from_markdown_fences(self):
         fenced = "```json\n{\"name\": \"TestTool\", \"steps\": [1, 2]}\n```"
         extracted = LLMClient._extract_json(fenced)
