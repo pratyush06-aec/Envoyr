@@ -174,10 +174,54 @@ def fetch_url_text(url: str, timeout_sec: float = 3.0) -> str | None:
 def research_toolchain(intent: str, target_os: str = "windows") -> ToolchainProfile:
     """Analyze natural-language setup intent and generate evidence-grounded profile.
 
-    Delegates to dynamic AgentResearcher (which leverages live LLM reasoning
+    If intent matches a known baseline toolchain, derives from deterministic KNOWN_PROFILES.
+    Otherwise, delegates to dynamic AgentResearcher (which leverages live LLM reasoning
     when configured, or intelligent heuristic synthesis when offline).
     """
-    from envoyr.agent.researcher import AgentResearcher
+    intent_lower = intent.lower()
+    matched_key = None
+    if "midnight" in intent_lower or "compact" in intent_lower:
+        matched_key = "midnight"
+    elif "foundry" in intent_lower or "forge" in intent_lower or "anvil" in intent_lower:
+        matched_key = "foundry"
+    elif "solana" in intent_lower or "agave" in intent_lower:
+        matched_key = "solana"
+    elif "cosmwasm" in intent_lower or "wasmd" in intent_lower:
+        matched_key = "cosmwasm"
+    elif "rust" in intent_lower:
+        matched_key = "rust"
 
+    if matched_key and matched_key in KNOWN_PROFILES:
+        raw = KNOWN_PROFILES[matched_key]
+        recommended_adapter = (
+            raw["windows_adapter"] if target_os.lower() == "windows" else raw["linux_adapter"]
+        )
+        prereqs = [
+            Prerequisite(
+                name=p["name"],
+                min_version=p.get("min_version"),
+                description=p.get("description", ""),
+                install_command=p.get("install_command", ""),
+            )
+            for p in raw["prerequisites"]
+        ]
+        steps = []
+        for s in raw["install_steps"]:
+            step_dict = dict(s)
+            step_dict["adapter"] = recommended_adapter
+            steps.append(step_dict)
+
+        return ToolchainProfile(
+            name=raw["name"],
+            target_os=target_os,
+            recommended_adapter=recommended_adapter,
+            sources=list(raw["sources"]),
+            compatibility_notes=raw["compatibility_notes"],
+            prerequisites=prereqs,
+            install_steps=steps,
+            smoke_tests=list(raw["smoke_tests"]),
+        )
+
+    from envoyr.agent.researcher import AgentResearcher
     researcher = AgentResearcher()
     return researcher.research(intent, target_os=target_os)

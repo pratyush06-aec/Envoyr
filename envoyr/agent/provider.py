@@ -130,7 +130,10 @@ class LLMClient:
         req = urllib.request.Request(
             url,
             data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "Envoyr/1.0",
+            },
             method="POST",
         )
         try:
@@ -196,6 +199,7 @@ class LLMClient:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}",
+                "User-Agent": "Envoyr/1.0",
             },
             method="POST",
         )

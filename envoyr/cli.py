@@ -56,8 +56,70 @@ def cmd_research(args) -> int:
     return 0
 
 
+def _run_and_verify_pipeline(
+    task_id: str,
+    storage: Storage,
+    researcher: AgentResearcher | None = None,
+    timeout: int = 300,
+    skip_verify: bool = False,
+) -> int:
+    """Executes stages [3/5], [4/5], and [5/5] using the specialized agents."""
+    task = storage.get_task(task_id)
+    if not task:
+        print(f"Error: Task '{task_id}' not found.", file=sys.stderr)
+        return 1
+
+    steps = task.steps or []
+    tracer = NeatlogsTracer()
+    tracer.record_event("task_execution_started", task.id, {"steps": len(steps), "adapter": task.adapter})
+
+    print(f"\n[3/5] Executing {len(steps)} step(s) via {task.adapter.upper()} adapter:")
+    engine = ExecutionEngine(storage)
+    updated_task = engine.run_task(task.id, timeout_per_step=timeout)
+    tracer.record_event("task_execution_finished", task.id, {"state": updated_task.state.value})
+
+    if updated_task.state == TaskState.FAILED:
+        print(f"\n[!] Execution FAILED: {updated_task.error_message}", file=sys.stderr)
+        return 1
+    print(f"+ Task {task.id} execution completed. State: {updated_task.state.value}")
+
+    if not skip_verify:
+        print(f"\n[4/5] Running verification smoke tests...")
+        if researcher is None:
+            researcher = AgentResearcher(storage=storage)
+        verifier = Verifier(storage, researcher=researcher)
+        passed, results, diagnosis = verifier.verify_task(task.id)
+        for r in results:
+            mark = "[PASS]" if r.passed else "[FAIL]"
+            detail = f" - {r.output}" if r.output else (f" - {r.error_message}" if r.error_message else "")
+            print(f"      {mark} {r.command}{detail}")
+        if passed:
+            final_task = storage.get_task(task.id) or updated_task
+            econ = EconomicsCalculator.calculate_cost(final_task)
+            tracer.record_event("task_completed", task.id, {"cost_saved_usd": econ.cost_saved_usd})
+            print(f"\n[5/5] All verification tests passed! Task {task.id} is COMPLETED.")
+            print(f"      Success! Environment ready. Session logged to neatlogs.")
+            print(f"      [Economics] {econ.summary}")
+            print("=" * 70)
+            return 0
+        else:
+            print(f"\n[!] Verification FAILED for Task {task.id}.", file=sys.stderr)
+            if diagnosis:
+                print(f"    Root Cause:    {diagnosis.failure_type}", file=sys.stderr)
+                print(f"    Analysis:      {diagnosis.analysis}", file=sys.stderr)
+                print(f"    Suggested Fix: {diagnosis.suggested_fix}", file=sys.stderr)
+                if diagnosis.remediation_command:
+                    print(f"    Auto-heal Cmd: {diagnosis.remediation_command}", file=sys.stderr)
+            return 1
+
+    econ = EconomicsCalculator.calculate_cost(updated_task)
+    print(f"      [Economics] {econ.summary}")
+    return 0
+
+
 def cmd_setup(args) -> int:
     storage = Storage(args.db_path)
+    researcher = AgentResearcher(storage=storage)
 
     # 1. Research phase
     print(f"[1/5] Researching official documentation for: '{args.intent}'...")
@@ -114,13 +176,7 @@ def cmd_setup(args) -> int:
         storage.transition_task(task.id, TaskState.APPROVED, reason="Auto-approved via --yes")
         print(f"\n+ Task {task.id} automatically approved for execution.")
         if getattr(args, "run", False):
-            print(f"\n[3/5] Executing {len(steps)} step(s) for Task {task.id}:")
-            engine = ExecutionEngine(storage)
-            updated_task = engine.run_task(task.id)
-            if updated_task.state == TaskState.FAILED:
-                print(f"\n[!] Execution FAILED: {updated_task.error_message}", file=sys.stderr)
-                return 1
-            print(f"\n+ Task {task.id} execution completed. State: {updated_task.state.value}")
+            return _run_and_verify_pipeline(task.id, storage, researcher=researcher)
     elif getattr(args, "interactive", False) or (sys.stdin.isatty() and not getattr(args, "no_prompt", False)):
         while True:
             try:
@@ -152,15 +208,7 @@ def cmd_setup(args) -> int:
                     return 1
                 storage.transition_task(task.id, TaskState.APPROVED, reason="Approved interactively by user")
                 print(f"+ Task {task.id} approved for execution.")
-                if getattr(args, "run", False):
-                    print(f"\n[3/5] Executing {len(steps)} step(s) for Task {task.id}:")
-                    engine = ExecutionEngine(storage)
-                    updated_task = engine.run_task(task.id)
-                    if updated_task.state == TaskState.FAILED:
-                        print(f"\n[!] Execution FAILED: {updated_task.error_message}", file=sys.stderr)
-                        return 1
-                    print(f"\n+ Task {task.id} execution completed. State: {updated_task.state.value}")
-                break
+                return _run_and_verify_pipeline(task.id, storage, researcher=researcher)
             else:
                 print(f"Task remains in PLANNED state. Run 'envoyr approve {task.id}' when ready.")
                 break
@@ -235,47 +283,14 @@ def cmd_run(args) -> int:
         )
         return 1
 
-    tracer = NeatlogsTracer()
-    tracer.record_event("task_execution_started", task.id, {"steps": len(task.steps), "adapter": task.adapter})
-
-    print(f"\n[3/5] Executing {len(task.steps)} step(s) for Task {task.id}:")
-    engine = ExecutionEngine(storage)
-    updated_task = engine.run_task(task.id, timeout_per_step=args.timeout)
-    tracer.record_event("task_execution_finished", task.id, {"state": updated_task.state.value})
-
-    if updated_task.state == TaskState.FAILED:
-        print(f"\n[!] Execution FAILED: {updated_task.error_message}", file=sys.stderr)
-        return 1
-    print(f"\n+ Task {task.id} execution completed. State: {updated_task.state.value}")
-
-    if not getattr(args, "no_verify", False):
-        print(f"\n[4/5] Running verification smoke tests...")
-        researcher = AgentResearcher(storage=storage)
-        verifier = Verifier(storage, researcher=researcher)
-        passed, results, diagnosis = verifier.verify_task(task.id)
-        for r in results:
-            mark = "[PASS]" if r.passed else "[FAIL]"
-            detail = f" - {r.output}" if r.output else (f" - {r.error_message}" if r.error_message else "")
-            print(f"      {mark} {r.command}{detail}")
-        if passed:
-            final_task = storage.get_task(task.id) or updated_task
-            econ = EconomicsCalculator.calculate_cost(final_task)
-            print(f"\n[5/5] All verification tests passed! Task {task.id} is COMPLETED.")
-            print(f"      [Economics] {econ.summary}")
-            return 0
-        else:
-            print(f"\n[!] Verification FAILED for Task {task.id}.", file=sys.stderr)
-            if diagnosis:
-                print(f"    Root Cause:    {diagnosis.failure_type}", file=sys.stderr)
-                print(f"    Analysis:      {diagnosis.analysis}", file=sys.stderr)
-                print(f"    Suggested Fix: {diagnosis.suggested_fix}", file=sys.stderr)
-                if diagnosis.remediation_command:
-                    print(f"    Auto-heal Cmd: {diagnosis.remediation_command}", file=sys.stderr)
-            return 1
-
-    econ = EconomicsCalculator.calculate_cost(updated_task)
-    print(f"      [Economics] {econ.summary}")
-    return 0
+    researcher = AgentResearcher(storage=storage)
+    return _run_and_verify_pipeline(
+        task.id,
+        storage,
+        researcher=researcher,
+        timeout=args.timeout,
+        skip_verify=getattr(args, "no_verify", False),
+    )
 
 
 def cmd_verify(args) -> int:
