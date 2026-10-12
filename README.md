@@ -112,5 +112,9 @@ A verified developer-toolchain setup workflow, starting with Midnight on Windows
 
 ## Current Status
 
-- **Active Milestone:** Phase 0 — Repository and Development Foundation.
+- **Completed Milestones:**
+  - **Phase 0 — Repository and Development Foundation:** Repository setup, pyproject.toml, standard library architecture, and test suite.
+  - **Phase 1 — CLI and Structured Task Model:** Typed task contracts, SQLite persistence (`tasks`, `steps`, `state_transitions`), state transition validation engine, and `envoyr` CLI (`setup`, `list`, `status`, `history`, `transition`).
+- **Active Milestone:** Phase 2 — Documentation Research Engine.
 - **Observability & Workflow:** Integrated with Entire for session checkpoints and neatlogs for agent execution tracing.
+

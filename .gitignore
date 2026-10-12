@@ -1,3 +1,16 @@
 # Skills
 .agents
 .entire
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Envoyr runtime state
+.envoyr/
+*.db

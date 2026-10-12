@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "envoyr"
+version = "0.1.0"
+description = "AI-powered development environment orchestrator"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Envoyr Team" }]
+dependencies = []
+
+[project.scripts]
+envoyr = "envoyr.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["envoyr*"]
