@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from envoyr import __version__
+from envoyr.executor import ExecutionEngine
 from envoyr.models import Step, TaskState
 from envoyr.planner import format_plan_inspection, validate_plan_safety
 from envoyr.research import research_toolchain
@@ -106,6 +107,14 @@ def cmd_setup(args) -> int:
             return 1
         storage.transition_task(task.id, TaskState.APPROVED, reason="Auto-approved via --yes")
         print(f"\n+ Task {task.id} automatically approved for execution.")
+        if getattr(args, "run", False):
+            print(f"\n[3/5] Executing {len(steps)} step(s) for Task {task.id}:")
+            engine = ExecutionEngine(storage)
+            updated_task = engine.run_task(task.id)
+            if updated_task.state == TaskState.FAILED:
+                print(f"\n[!] Execution FAILED: {updated_task.error_message}", file=sys.stderr)
+                return 1
+            print(f"\n+ Task {task.id} execution completed. State: {updated_task.state.value}")
     elif getattr(args, "interactive", False) or (sys.stdin.isatty() and not getattr(args, "no_prompt", False)):
         while True:
             try:
@@ -121,6 +130,14 @@ def cmd_setup(args) -> int:
                     return 1
                 storage.transition_task(task.id, TaskState.APPROVED, reason="Approved interactively by user")
                 print(f"+ Task {task.id} approved for execution.")
+                if getattr(args, "run", False):
+                    print(f"\n[3/5] Executing {len(steps)} step(s) for Task {task.id}:")
+                    engine = ExecutionEngine(storage)
+                    updated_task = engine.run_task(task.id)
+                    if updated_task.state == TaskState.FAILED:
+                        print(f"\n[!] Execution FAILED: {updated_task.error_message}", file=sys.stderr)
+                        return 1
+                    print(f"\n+ Task {task.id} execution completed. State: {updated_task.state.value}")
                 break
             else:
                 print(f"Task remains in PLANNED state. Run 'envoyr approve {task.id}' when ready.")
@@ -180,6 +197,29 @@ def cmd_reject(args) -> int:
     reason = args.reason or "Rejected by user"
     storage.transition_task(task.id, TaskState.CANCELLED, reason=reason)
     print(f"+ Task {task.id} rejected and cancelled ({reason}).")
+    return 0
+
+
+def cmd_run(args) -> int:
+    storage = Storage(args.db_path)
+    task = storage.get_task(args.task_id)
+    if not task:
+        print(f"Error: Task '{args.task_id}' not found.", file=sys.stderr)
+        return 1
+    if task.state != TaskState.APPROVED:
+        print(
+            f"Error: Task {task.id} is in '{task.state.value}' state; must be APPROVED to run.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"\n[3/5] Executing {len(task.steps)} step(s) for Task {task.id}:")
+    engine = ExecutionEngine(storage)
+    updated_task = engine.run_task(task.id, timeout_per_step=args.timeout)
+    if updated_task.state == TaskState.FAILED:
+        print(f"\n[!] Execution FAILED: {updated_task.error_message}", file=sys.stderr)
+        return 1
+    print(f"\n+ Task {task.id} execution completed. State: {updated_task.state.value}")
     return 0
 
 
@@ -277,6 +317,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Automatically approve synthesized plan for execution",
     )
     p_setup.add_argument(
+        "--run",
+        action="store_true",
+        help="Immediately execute steps if auto-approved",
+    )
+    p_setup.add_argument(
         "--no-prompt",
         action="store_true",
         help="Do not prompt interactively if running in terminal",
@@ -298,6 +343,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_rej.add_argument("task_id", help="Task identifier")
     p_rej.add_argument("--reason", default="Rejected by user", help="Reason for cancellation")
     p_rej.set_defaults(func=cmd_reject)
+
+    # run
+    p_run = subparsers.add_parser("run", help="Execute approved task steps")
+    p_run.add_argument("task_id", help="Task identifier")
+    p_run.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Per-step timeout in seconds (default: 300)",
+    )
+    p_run.set_defaults(func=cmd_run)
 
     # list
     p_list = subparsers.add_parser("list", help="List recent tasks")
