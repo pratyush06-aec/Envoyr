@@ -10,6 +10,13 @@ from envoyr.agent.heuristic import synthesize_heuristic_profile
 from envoyr.agent.provider import LLMClient
 from envoyr.research import Prerequisite, ToolchainProfile, fetch_url_text
 
+try:
+    import neatlogs
+    HAS_NEATLOGS = True
+except ImportError:
+    neatlogs = None  # type: ignore
+    HAS_NEATLOGS = False
+
 
 SYSTEM_PROMPT = """You are Envoyr, an elite AI development environment orchestrator.
 Your goal is to transform a natural language developer intent into a typed, verified execution plan.
@@ -59,6 +66,21 @@ class AgentResearcher:
 
     def research(self, intent: str, target_os: str = "windows") -> ToolchainProfile:
         """Synthesize a complete toolchain profile for any natural language intent."""
+        if HAS_NEATLOGS and neatlogs is not None:
+            try:
+                with neatlogs.trace("agent_researcher", kind="AGENT") as span:
+                    span.set_attribute("envoyr.intent", intent)
+                    span.set_attribute("envoyr.target_os", target_os)
+                    profile = self._do_research(intent, target_os=target_os)
+                    span.set_attribute("envoyr.profile.name", profile.name)
+                    span.set_attribute("envoyr.profile.adapter", profile.recommended_adapter)
+                    span.set_attribute("envoyr.profile.steps_count", len(profile.install_steps))
+                    return profile
+            except Exception:
+                return self._do_research(intent, target_os=target_os)
+        return self._do_research(intent, target_os=target_os)
+
+    def _do_research(self, intent: str, target_os: str = "windows") -> ToolchainProfile:
         # 1. Check local persistent SQLite cache
         if self.storage:
             try:
@@ -145,6 +167,20 @@ class AgentResearcher:
         """Diagnose an unexpected failure using LLM reasoning if configured."""
         if not self.llm_client.is_configured:
             return None
+        if HAS_NEATLOGS and neatlogs is not None:
+            try:
+                with neatlogs.trace("agent_diagnose_failure", kind="AGENT") as span:
+                    span.set_attribute("envoyr.command", command[:500])
+                    res = self._do_diagnose_failure(command, stderr, stdout)
+                    if res:
+                        span.set_attribute("envoyr.diagnosis.failure_type", getattr(res, "failure_type", "UNKNOWN"))
+                        span.set_attribute("envoyr.diagnosis.can_auto_heal", getattr(res, "can_auto_heal", False))
+                    return res
+            except Exception:
+                return self._do_diagnose_failure(command, stderr, stdout)
+        return self._do_diagnose_failure(command, stderr, stdout)
+
+    def _do_diagnose_failure(self, command: str, stderr: str, stdout: str) -> Any | None:
         from envoyr.verifier import HealingDiagnosis
         prompt = (
             f"A command failed during toolchain setup/verification.\n"

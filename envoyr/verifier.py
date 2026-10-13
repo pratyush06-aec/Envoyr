@@ -12,6 +12,13 @@ from envoyr.models import Task, TaskState
 from envoyr.research import research_toolchain
 from envoyr.storage import Storage
 
+try:
+    import neatlogs
+    HAS_NEATLOGS = True
+except ImportError:
+    neatlogs = None  # type: ignore
+    HAS_NEATLOGS = False
+
 
 @dataclass
 class VerificationResult:
@@ -209,6 +216,25 @@ class Verifier:
         self.researcher = researcher
 
     def verify_task(
+        self,
+        task_id: str,
+        smoke_tests: list[str] | None = None,
+        max_healing_retries: int = 1,
+    ) -> tuple[bool, list[VerificationResult], HealingDiagnosis | None]:
+        if HAS_NEATLOGS and neatlogs is not None:
+            try:
+                with neatlogs.trace("smoke_verifier", kind="TOOL") as span:
+                    span.set_attribute("envoyr.task_id", task_id)
+                    passed, res, diag = self._do_verify_task(task_id, smoke_tests, max_healing_retries)
+                    span.set_attribute("envoyr.passed", passed)
+                    if diag:
+                        span.set_attribute("envoyr.diagnosis", diag.display_category)
+                    return passed, res, diag
+            except Exception:
+                return self._do_verify_task(task_id, smoke_tests, max_healing_retries)
+        return self._do_verify_task(task_id, smoke_tests, max_healing_retries)
+
+    def _do_verify_task(
         self,
         task_id: str,
         smoke_tests: list[str] | None = None,

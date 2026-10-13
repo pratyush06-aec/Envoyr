@@ -14,6 +14,14 @@ import urllib.request
 from typing import Any
 
 
+try:
+    import neatlogs
+    HAS_NEATLOGS = True
+except ImportError:
+    neatlogs = None  # type: ignore
+    HAS_NEATLOGS = False
+
+
 # Groq model alias mapping (translates friendly names to Groq API identifiers)
 GROQ_MODEL_ALIASES: dict[str, str] = {
     "gpt-oss": "openai/gpt-oss-120b",
@@ -108,7 +116,7 @@ class LLMClient:
     def _call_gemini(
         self, prompt: str, system_prompt: str | None = None, timeout: float = 20.0
     ) -> str:
-        """Call Google Gemini generateContent endpoint."""
+        """Call Google Gemini generateContent endpoint with Neatlogs LLM span tracing."""
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"gemini-2.0-flash:generateContent?key={self.gemini_api_key}"
@@ -136,20 +144,37 @@ class LLMClient:
             },
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                candidates = data.get("candidates", [])
-                if candidates and "content" in candidates[0]:
-                    parts = candidates[0]["content"].get("parts", [])
-                    if parts:
-                        return parts[0].get("text", "")
-                return ""
-        except urllib.error.HTTPError as e:
-            error_body = e.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Gemini API error ({e.code}): {error_body}") from e
-        except Exception as e:
-            raise RuntimeError(f"Gemini network error: {str(e)}") from e
+
+        def _do_call() -> str:
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    candidates = data.get("candidates", [])
+                    if candidates and "content" in candidates[0]:
+                        parts = candidates[0]["content"].get("parts", [])
+                        if parts:
+                            return parts[0].get("text", "")
+                    return ""
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"Gemini API error ({e.code}): {error_body}") from e
+            except Exception as e:
+                raise RuntimeError(f"Gemini network error: {str(e)}") from e
+
+        if HAS_NEATLOGS and neatlogs is not None:
+            try:
+                with neatlogs.trace("gemini.generateContent", kind="LLM") as span:
+                    span.set_attribute("gen_ai.system", "gemini")
+                    span.set_attribute("gen_ai.request.model", "gemini-2.0-flash")
+                    span.set_attribute("gen_ai.prompt", prompt[:2000] if prompt else "")
+                    res = _do_call()
+                    span.set_attribute("gen_ai.completion", res[:2000] if res else "")
+                    return res
+            except Exception as exc:
+                if isinstance(exc, RuntimeError):
+                    raise
+                return _do_call()
+        return _do_call()
 
     def _call_openai(
         self, prompt: str, system_prompt: str | None = None, timeout: float = 20.0
@@ -203,18 +228,36 @@ class LLMClient:
             },
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                choices = data.get("choices", [])
-                if choices and "message" in choices[0]:
-                    return choices[0]["message"].get("content", "")
-                return ""
-        except urllib.error.HTTPError as e:
-            error_body = e.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"{provider_label} API error ({e.code}): {error_body}") from e
-        except Exception as e:
-            raise RuntimeError(f"{provider_label} network error: {str(e)}") from e
+
+        def _do_call() -> str:
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    choices = data.get("choices", [])
+                    if choices and "message" in choices[0]:
+                        return choices[0]["message"].get("content", "")
+                    return ""
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"{provider_label} API error ({e.code}): {error_body}") from e
+            except Exception as e:
+                raise RuntimeError(f"{provider_label} network error: {str(e)}") from e
+
+        if HAS_NEATLOGS and neatlogs is not None:
+            span_name = f"{provider_label.lower()}.chat.completions"
+            try:
+                with neatlogs.trace(span_name, kind="LLM") as span:
+                    span.set_attribute("gen_ai.system", provider_label.lower())
+                    span.set_attribute("gen_ai.request.model", model_id)
+                    span.set_attribute("gen_ai.prompt", prompt[:2000] if prompt else "")
+                    res = _do_call()
+                    span.set_attribute("gen_ai.completion", res[:2000] if res else "")
+                    return res
+            except Exception as exc:
+                if isinstance(exc, RuntimeError):
+                    raise
+                return _do_call()
+        return _do_call()
 
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any] | None:
