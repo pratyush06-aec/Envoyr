@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 from envoyr.cli import main
 from envoyr.executor import ExecutionEngine, RemoteAdapter
-from envoyr.integrations import EconomicsCalculator
 from envoyr.models import TaskState
 from envoyr.research import research_toolchain
 from envoyr.storage import Storage
@@ -89,17 +88,11 @@ class TestMidnightEndToEnd(unittest.TestCase):
             self.assertIn("Running verification smoke tests", output)
             self.assertIn("compact --version", output)
             self.assertIn("All verification tests passed", output)
-            self.assertIn("[Economics]", output)
 
         task = self.storage.get_task(task_id)
         self.assertEqual(task.state, TaskState.COMPLETED)
         for s in task.steps:
             self.assertEqual(s.status.value, "SUCCESS")
-
-        # 5. Economics Modeling (CFO.ai)
-        econ = EconomicsCalculator.calculate_cost(task)
-        self.assertEqual(econ.adapter, "remote")
-        self.assertGreaterEqual(econ.estimated_cost_usd, 0.0)
 
     def test_midnight_compilation_failure_diagnosis(self):
         diagnosis = diagnose_failure(
@@ -121,7 +114,6 @@ class TestMidnightEndToEnd(unittest.TestCase):
             self.assertIn("Executing 5 step(s)", output)
             self.assertIn("compact --version", output)
             self.assertIn("Success! Environment ready.", output)
-            self.assertIn("[Economics]", output)
 
 
 if __name__ == "__main__":

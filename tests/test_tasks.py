@@ -162,7 +162,26 @@ class TestEnvoyrTaskEngine(unittest.TestCase):
             self.assertEqual(ret, 0)
             self.assertIn("PLANNED -> APPROVED", out.getvalue())
 
+    def test_load_env_file_parses_variables(self):
+        import os
+        from envoyr.cli import load_env_file
+
+        with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".env") as f:
+            f.write("# Sample comment\nTEST_EXTRACTED_SECRET=\"secret_value_123\"\nANOTHER_KEY=plain_val\n")
+            f_path = Path(f.name)
+
+        try:
+            load_env_file(f_path)
+            self.assertEqual(os.environ.get("TEST_EXTRACTED_SECRET"), "secret_value_123")
+            self.assertEqual(os.environ.get("ANOTHER_KEY"), "plain_val")
+        finally:
+            if f_path.exists():
+                f_path.unlink()
+            os.environ.pop("TEST_EXTRACTED_SECRET", None)
+            os.environ.pop("ANOTHER_KEY", None)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

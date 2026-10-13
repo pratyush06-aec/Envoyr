@@ -78,7 +78,7 @@ $ envoyr setup "Configure Midnight development environment on Windows"
       ✓ `compact --version` -> 0.2.1 (OK)
       ✓ Midnight test contract compilation passed
 
-[5/5] Success! Environment ready. Session logged to neatlogs.
+[5/5] Success! Environment ready.
 ```
 
 ## Execution Adapters
@@ -86,46 +86,31 @@ $ envoyr setup "Configure Midnight development environment on Windows"
 - **Local Host / WSL:** Executes directly on developer machines where native packages or WSL2 are supported and sufficient.
 - **Remote Linux Worker:** Spawns a lightweight, disposable remote Linux container or micro-VM over an encrypted connection—enabling seamless setups on low-spec Windows laptops without requiring local Docker Desktop.
 
-## Implementation Plan
+## Implementation Architecture
 
-- **Phase 0 — Repository and Development Foundation:** Establish repository structure, reproducible environment, documentation, and Entire tracking.
+- **Phase 0 — Repository and Development Foundation:** Establish repository structure, reproducible environment, documentation, and testing.
 - **Phase 1 — CLI and Structured Task Model:** Implement CLI, typed task contracts, SQLite persistence, and state transition validation.
 - **Phase 2 — Documentation Research:** Retrieve official documentation, extract prerequisites, and generate toolchain profiles with source citations.
 - **Phase 3 — Planning and Human-in-the-Loop:** Generate dependency-ordered execution plans with policy enforcement and human approval gates.
 - **Phase 4 — Controlled Execution Engine:** Execute approved actions through controlled adapters with timeouts, output capture, and allowlists.
 - **Phase 5 — Verification and Self-Healing:** Implement the execution-diagnosis-recovery loop with bounded retries and smoke tests.
-- **Phase 6 — Mandatory Integrations:** Integrate neatlogs for observability, Entire for coding workflow, and cfo.ai for economics modeling.
-- **Phase 7 — Remote Linux Execution:** Provide remote Linux execution worker for low-spec Windows laptops without Docker Desktop.
-- **Phase 8 — Midnight Toolchain Profile:** Research, plan, execute, and verify the Midnight development environment on Windows.
-- **Phase 9 — Additional Toolchains:** Expand support to additional Linux-dependent developer toolchains.
-- **Phase 10 — Productization and Demo:** Polish CLI experience, error reporting, execution summaries, and end-to-end demo.
-
-## Required Integrations
-
-- **Entire:** Coding-session context, reviewable changes, and checkpoints
-- **neatlogs:** Agent workflow tracing, observability, and debugging
-- **cfo.ai:** Infrastructure economics and business sustainability modeling
-
-## Initial Target
-
-A verified developer-toolchain setup workflow, starting with Midnight on Windows without requiring Docker Desktop locally.
+- **Phase 6 — Remote Linux Execution:** Provide remote Linux execution worker for low-spec Windows laptops without Docker Desktop.
+- **Phase 7 — Multi-Toolchain Profiles:** Research, plan, execute, and verify development environments across Windows and Linux.
+- **Phase 8 — Productization and Interactive Demo:** Streamlined CLI with end-to-end `envoyr demo` showcase, rich diagnostics, and interactive REPL.
 
 ## Current Status
 
-- **Completed Milestones:**
-  - **Phase 0 — Repository and Development Foundation:** Repository setup, pyproject.toml, standard library architecture, and test suite.
-  - **Phase 1 — CLI and Structured Task Model:** Typed task contracts, SQLite persistence (`tasks`, `steps`, `state_transitions`), state transition validation engine, and `envoyr` CLI (`setup`, `list`, `status`, `history`, `transition`).
-  - **Phase 2 — Documentation Research Engine:** Upstream doc retrieval, cited sources, OS compatibility matrix, prerequisite derivation, and toolchain profiling.
-  - **Phase 3 — Planning & Human-in-the-Loop Gate:** DAG topological ordering, safety blocked-pattern denylist, plan inspection, and approval gate (`plan`, `approve`, `reject`).
-  - **Phase 4 — Controlled Execution Engine:** Multi-adapter runner (`LocalAdapter`, `WSLAdapter`, `RemoteAdapter`) with per-step timeouts, stdout/stderr capture, and fail-fast task status updates (`envoyr run`).
-  - **Phase 5 — Verification & Bounded Self-Healing:** Post-installation smoke test runner, root-cause error diagnostics (`PATH_OR_BINARY_MISSING`, `PERMISSION_DENIED`, `NETWORK_TRANSIENT`), and automated retry recovery (`envoyr verify`).
-  - **Phase 6 — Ecosystem Integrations:** Structured telemetry event streaming via `NeatlogsTracer` and compute unit economics / cost savings calculation via `EconomicsCalculator` (cfo.ai).
-  - **Phase 7 — Remote Linux Micro-VM Execution:** Offloaded execution for complex Linux-dependent developer toolchains (e.g. Midnight on Windows without Docker Desktop) via configurable SSH and isolated micro-VM sandboxes.
-  - **Phase 8 — Midnight Toolchain Profile:** End-to-end orchestration for the Midnight Network toolchain on Windows, verifying Rustup, Compact compiler, contract compilation diagnostics, and remote execution.
-  - **Phase 9 — Additional Developer Toolchains:** Expanded evidence-grounded research and profile synthesis to Foundry (Ethereum EVM), Solana CLI, and CosmWasm smart contracts.
-  - **Phase 10 — Productization & Interactive Demo:** Streamlined CLI with end-to-end `envoyr demo` showcase, rich diagnostics, CFO.ai unit economics savings reports, and neatlogs telemetry traces.
-  - **Dynamic AI Orchestrator Agent:** Natural language-first CLI interface (`envoyr "<prompt>"`, interactive `envoyr>` REPL), zero-dependency standard-library LLM provider (`Gemini` & `OpenAI`/`Ollama`), live agent research loop, SQLite persistent research cache, dynamic LLM error diagnosis, and automated remediation self-healing.
-- **Test Suite Status:** 56 unit and integration tests across 10 test suites (`test_tasks`, `test_research`, `test_planner`, `test_executor`, `test_verifier`, `test_integrations`, `test_midnight`, `test_toolchains`, `test_agent`, `test_dynamic_research`), 100% passing.
-- **Observability & Workflow:** Integrated with Entire for session checkpoints, neatlogs for agent execution tracing, and cfo.ai for unit economics modeling.
+- **Completed Capabilities:**
+  - **Task Model & Persistence:** Typed task contracts, SQLite persistence (`tasks`, `steps`, `state_transitions`), state transition validation engine, and `envoyr` CLI (`setup`, `list`, `status`, `history`, `transition`).
+  - **Documentation Research Engine:** Upstream doc retrieval, cited sources, OS compatibility matrix, prerequisite derivation, and toolchain profiling.
+  - **Planning & Safety Gate:** DAG topological ordering, safety blocked-pattern denylist, plan inspection, and approval gate (`plan`, `approve`, `reject`).
+  - **Controlled Execution Engine:** Multi-adapter runner (`LocalAdapter`, `WSLAdapter`, `RemoteAdapter`) with per-step timeouts, stdout/stderr capture, and fail-fast task status updates (`envoyr run`).
+  - **Verification & Bounded Self-Healing:** Post-installation smoke test runner, root-cause error diagnostics (`PATH_OR_BINARY_MISSING`, `PERMISSION_DENIED`, `NETWORK_TRANSIENT`, `COMPILATION_ERROR`), and automated retry recovery (`envoyr verify`).
+  - **Remote Linux Micro-VM Execution:** Offloaded execution for complex Linux-dependent developer toolchains (e.g. Midnight on Windows without Docker Desktop) via configurable SSH and isolated micro-VM sandboxes.
+  - **Developer Toolchains:** Evidence-grounded research and profile synthesis for Midnight Network, Foundry (Ethereum EVM), Solana CLI, CosmWasm, Bun, Rust, and Python.
+  - **Interactive REPL & Shorthand Routing:** Natural language-first CLI interface (`envoyr "<prompt>"`, interactive `envoyr>` REPL).
+  - **Dynamic AI Agent Engine:** Zero-dependency standard-library LLM provider (`Gemini` & `Groq`/`OpenAI`), live agent research loop, SQLite persistent research cache, dynamic error diagnosis, and autonomous remediation loop.
+  - **Test Suite Status:** Comprehensive test suite across 9 test suites (`test_tasks`, `test_research`, `test_planner`, `test_executor`, `test_verifier`, `test_midnight`, `test_toolchains`, `test_agent`, `test_dynamic_research`), 100% passing.
+
 
 

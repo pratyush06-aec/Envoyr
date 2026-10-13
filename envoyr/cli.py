@@ -7,26 +7,12 @@ from pathlib import Path
 
 from envoyr import __version__
 from envoyr.executor import ExecutionEngine
-from envoyr.integrations import (
-    EconomicsCalculator,
-    NeatlogsTracer,
-    flush_neatlogs,
-    init_neatlogs,
-    shutdown_neatlogs,
-)
 from envoyr.models import Step, StepStatus, TaskState
 from envoyr.planner import format_plan_inspection, validate_plan_safety
 from envoyr.research import research_toolchain
 from envoyr.storage import DEFAULT_DB_PATH, Storage
 from envoyr.verifier import Verifier, diagnose_failure
 from envoyr.agent import AgentResearcher
-
-try:
-    import neatlogs
-    HAS_NEATLOGS = True
-except ImportError:
-    neatlogs = None  # type: ignore
-    HAS_NEATLOGS = False
 
 
 def print_non_technical_diagnostic(diagnosis, failed_step: Step | None = None) -> None:
@@ -61,8 +47,6 @@ def _format_task_summary(task) -> str:
     if task.error_message:
         lines.append(f"Error:     {task.error_message}")
     if task.steps:
-        econ = EconomicsCalculator.calculate_cost(task)
-        lines.append(f"Economics: {econ.summary}")
         lines.append(f"Steps:     ({len(task.steps)} total)")
         for s in task.steps:
             mark = "[OK]" if s.status.value == "SUCCESS" else f"[{s.status.value}]"
@@ -71,19 +55,6 @@ def _format_task_summary(task) -> str:
 
 
 def cmd_research(args) -> int:
-    init_neatlogs(workflow_name="toolchain-researcher")
-    if HAS_NEATLOGS and neatlogs is not None:
-        try:
-            with neatlogs.trace("research_toolchain", kind="WORKFLOW") as span:
-                span.set_attribute("envoyr.intent", args.intent)
-                span.set_attribute("envoyr.target_os", getattr(args, "target_os", "windows"))
-                return _do_cmd_research(args)
-        except Exception:
-            return _do_cmd_research(args)
-    return _do_cmd_research(args)
-
-
-def _do_cmd_research(args) -> int:
     profile = research_toolchain(args.intent, target_os=args.target_os)
     print(f"Toolchain Profile: {profile.name}")
     print(f"Target OS:         {profile.target_os}")
@@ -117,9 +88,6 @@ def _run_and_verify_pipeline(
         researcher = AgentResearcher(storage=storage)
 
     steps = task.steps or []
-    tracer = NeatlogsTracer()
-    tracer.record_event("task_execution_started", task.id, {"steps": len(steps), "adapter": task.adapter})
-
     print(f"\n[3/5] Executing {len(steps)} step(s) via {task.adapter.upper()} adapter:")
 
     def on_step_diagnostic(diag, step):
@@ -133,7 +101,6 @@ def _run_and_verify_pipeline(
         on_diagnostic=on_step_diagnostic,
     )
     updated_task = engine.run_task(task.id, timeout_per_step=timeout)
-    tracer.record_event("task_execution_finished", task.id, {"state": updated_task.state.value})
 
     if updated_task.state == TaskState.FAILED:
         failed_step = next((s for s in updated_task.steps if s.status == StepStatus.FAILED), None)
@@ -159,12 +126,8 @@ def _run_and_verify_pipeline(
             detail = f" - {r.output}" if r.output else (f" - {r.error_message}" if r.error_message else "")
             print(f"      {mark} {r.command}{detail}")
         if passed:
-            final_task = storage.get_task(task.id) or updated_task
-            econ = EconomicsCalculator.calculate_cost(final_task)
-            tracer.record_event("task_completed", task.id, {"cost_saved_usd": econ.cost_saved_usd})
             print(f"\n[5/5] All verification tests passed! Task {task.id} is COMPLETED.")
-            print(f"      Success! Environment ready. Session logged to neatlogs.")
-            print(f"      [Economics] {econ.summary}")
+            print(f"      Success! Environment ready.")
             print("=" * 70)
             return 0
         else:
@@ -173,26 +136,11 @@ def _run_and_verify_pipeline(
                 print_non_technical_diagnostic(diagnosis)
             return 1
 
-    econ = EconomicsCalculator.calculate_cost(updated_task)
-    print(f"      [Economics] {econ.summary}")
     return 0
 
 
 def cmd_setup(args) -> int:
-    init_neatlogs(workflow_name="envoyr-orchestrator")
-    if HAS_NEATLOGS and neatlogs is not None:
-        try:
-            with neatlogs.trace("orchestrate_setup", kind="WORKFLOW") as span:
-                span.set_attribute("envoyr.intent", args.intent)
-                span.set_attribute("envoyr.target_os", getattr(args, "target_os", "windows"))
-                span.set_attribute("envoyr.adapter", getattr(args, "adapter", "local"))
-                return _do_cmd_setup(args)
-        except Exception:
-            return _do_cmd_setup(args)
-    return _do_cmd_setup(args)
 
-
-def _do_cmd_setup(args) -> int:
     storage = Storage(args.db_path)
     researcher = AgentResearcher(storage=storage)
 
@@ -346,18 +294,6 @@ def cmd_reject(args) -> int:
 
 
 def cmd_run(args) -> int:
-    init_neatlogs(workflow_name="task-executor")
-    if HAS_NEATLOGS and neatlogs is not None:
-        try:
-            with neatlogs.trace("execute_task", kind="WORKFLOW") as span:
-                span.set_attribute("envoyr.task_id", args.task_id)
-                return _do_cmd_run(args)
-        except Exception:
-            return _do_cmd_run(args)
-    return _do_cmd_run(args)
-
-
-def _do_cmd_run(args) -> int:
     storage = Storage(args.db_path)
     task = storage.get_task(args.task_id)
     if not task:
@@ -381,18 +317,6 @@ def _do_cmd_run(args) -> int:
 
 
 def cmd_verify(args) -> int:
-    init_neatlogs(workflow_name="verification-runner")
-    if HAS_NEATLOGS and neatlogs is not None:
-        try:
-            with neatlogs.trace("verify_task", kind="WORKFLOW") as span:
-                span.set_attribute("envoyr.task_id", args.task_id)
-                return _do_cmd_verify(args)
-        except Exception:
-            return _do_cmd_verify(args)
-    return _do_cmd_verify(args)
-
-
-def _do_cmd_verify(args) -> int:
     storage = Storage(args.db_path)
     task = storage.get_task(args.task_id)
     if not task:
@@ -423,6 +347,7 @@ def _do_cmd_verify(args) -> int:
         if diagnosis:
             print_non_technical_diagnostic(diagnosis)
         return 1
+
 
 
 
@@ -483,19 +408,6 @@ def cmd_transition(args) -> int:
 
 
 def cmd_demo(args) -> int:
-    init_neatlogs(workflow_name="envoyr-demo")
-    if HAS_NEATLOGS and neatlogs is not None:
-        try:
-            with neatlogs.trace("orchestrate_demo", kind="WORKFLOW") as span:
-                span.set_attribute("envoyr.intent", getattr(args, "intent", "demo"))
-                span.set_attribute("envoyr.target_os", getattr(args, "target_os", "windows"))
-                return _do_cmd_demo(args)
-        except Exception:
-            return _do_cmd_demo(args)
-    return _do_cmd_demo(args)
-
-
-def _do_cmd_demo(args) -> int:
     """Run an interactive or non-interactive end-to-end showcase of Envoyr."""
     print("=" * 70)
     print(" Envoyr — End-to-End Environment Orchestrator Demo")
@@ -544,12 +456,9 @@ def _do_cmd_demo(args) -> int:
 
     # 3. Execution
     print(f"\n[3/5] Executing {len(steps)} step(s) via {chosen_adapter.upper()} adapter:")
-    tracer = NeatlogsTracer()
-    tracer.record_event("demo_task_started", task.id, {"intent": intent, "steps": len(steps)})
 
     engine = ExecutionEngine(storage)
     updated_task = engine.run_task(task.id)
-    tracer.record_event("demo_task_executed", task.id, {"state": updated_task.state.value})
     print(f"+ Task {task.id} execution completed. State: {updated_task.state.value}")
 
     # 4. Smoke Verification
@@ -561,13 +470,7 @@ def _do_cmd_demo(args) -> int:
         mark = "[PASS]" if r.passed else "[FAIL]"
         print(f"      {mark} {r.command} -> {r.output or r.error_message}")
 
-    # 5. Economics & Summary
-    final_task = storage.get_task(task.id) or updated_task
-    econ = EconomicsCalculator.calculate_cost(final_task)
-    tracer.record_event("demo_task_completed", task.id, {"cost_saved_usd": econ.cost_saved_usd})
-
-    print(f"\n[5/5] Success! Environment ready. Session logged to neatlogs.")
-    print(f"      [Economics] {econ.summary}")
+    print(f"\n[5/5] Success! Environment ready.")
     print("=" * 70)
     return 0
 
@@ -720,31 +623,27 @@ KNOWN_SUBCOMMANDS = {
 
 def repl_shell(db_path: Path = DEFAULT_DB_PATH) -> int:
     """Interactive conversational shell for natural-language orchestration."""
-    init_neatlogs(workflow_name="envoyr-interactive-shell")
-    try:
-        print("=" * 70)
-        print(" Envoyr — AI Development Environment Orchestrator (Interactive Shell)")
-        print(" Type a natural language setup intent (e.g. 'Setup Bun runtime')")
-        print(" Type 'exit' or 'quit' to exit.")
-        print("=" * 70)
-        while True:
-            try:
-                line = input("\nenvoyr> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print("\nExiting Envoyr.")
-                break
-            if not line:
-                continue
-            if line.lower() in ("exit", "quit", "q"):
-                print("Goodbye.")
-                break
-            try:
-                main(["setup", line, "--db-path", str(db_path)])
-            except Exception as e:
-                print(f"Error: {e}", file=sys.stderr)
-        return 0
-    finally:
-        shutdown_neatlogs()
+    print("=" * 70)
+    print(" Envoyr — AI Development Environment Orchestrator (Interactive Shell)")
+    print(" Type a natural language setup intent (e.g. 'Setup Bun runtime')")
+    print(" Type 'exit' or 'quit' to exit.")
+    print("=" * 70)
+    while True:
+        try:
+            line = input("\nenvoyr> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nExiting Envoyr.")
+            break
+        if not line:
+            continue
+        if line.lower() in ("exit", "quit", "q"):
+            print("Goodbye.")
+            break
+        try:
+            main(["setup", line, "--db-path", str(db_path)])
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -758,34 +657,31 @@ def main(argv: list[str] | None = None) -> int:
         build_parser().print_help()
         return 0
 
-    try:
-        # Separate top-level flags (like --db-path) from subcommands
-        clean_args: list[str] = []
-        top_flags: list[str] = []
-        i = 0
-        while i < len(args_list):
-            if args_list[i] == "--db-path" and i + 1 < len(args_list):
-                top_flags.extend(["--db-path", args_list[i + 1]])
-                i += 2
-            elif args_list[i].startswith("--db-path="):
-                top_flags.append(args_list[i])
-                i += 1
-            else:
-                clean_args.append(args_list[i])
-                i += 1
+    # Separate top-level flags (like --db-path) from subcommands
+    clean_args: list[str] = []
+    top_flags: list[str] = []
+    i = 0
+    while i < len(args_list):
+        if args_list[i] == "--db-path" and i + 1 < len(args_list):
+            top_flags.extend(["--db-path", args_list[i + 1]])
+            i += 2
+        elif args_list[i].startswith("--db-path="):
+            top_flags.append(args_list[i])
+            i += 1
+        else:
+            clean_args.append(args_list[i])
+            i += 1
 
-        # Natural-language prompt shorthand: if first arg is not a known subcommand or flag,
-        # auto-route to 'setup <intent>'
-        first_arg = clean_args[0] if clean_args else ""
-        if first_arg and not first_arg.startswith("-") and first_arg not in KNOWN_SUBCOMMANDS:
-            clean_args = ["setup"] + clean_args
+    # Natural-language prompt shorthand: if first arg is not a known subcommand or flag,
+    # auto-route to 'setup <intent>'
+    first_arg = clean_args[0] if clean_args else ""
+    if first_arg and not first_arg.startswith("-") and first_arg not in KNOWN_SUBCOMMANDS:
+        clean_args = ["setup"] + clean_args
 
-        final_args = top_flags + clean_args
-        parser = build_parser()
-        args = parser.parse_args(final_args)
-        return args.func(args)
-    finally:
-        flush_neatlogs()
+    final_args = top_flags + clean_args
+    parser = build_parser()
+    args = parser.parse_args(final_args)
+    return args.func(args)
 
 
 if __name__ == "__main__":
